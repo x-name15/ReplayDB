@@ -6,13 +6,12 @@ import (
 	"fmt"
 )
 
-// frameBuffer accumulates bytes for an outgoing frame body.
 type frameBuffer struct {
 	buf bytes.Buffer
 }
 
-func (f *frameBuffer) WriteByte(b byte) {
-	f.buf.WriteByte(b)
+func (f *frameBuffer) WriteByte(b byte) error {
+    return f.buf.WriteByte(b)
 }
 
 func (f *frameBuffer) WriteField(data []byte) {
