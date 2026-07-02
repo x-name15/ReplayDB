@@ -15,7 +15,10 @@ jobs:
     permissions:
       contents: write
       packages: write
-
+    
+    env:
+      REPOSITORY_LC: x-name15/replaydb
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -131,6 +134,9 @@ jobs:
           cd dist
           sha256sum * > replaydb-${VERSION}-checksums.txt
           cd ..
+      
+      - name: Lowercase repository name
+        run: echo "REPOSITORY_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -152,10 +158,10 @@ jobs:
             | **macOS (Apple Silicon)** | `replaydb-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz` |
 
             **Docker Images (multi‑arch: amd64 + arm64):**
-            - **GHCR:** `docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}`
+            - **GHCR:** `docker pull ghcr.io/${{ env.REPOSITORY_LC }}:${{ steps.version.outputs.version }}`
             - **Docker Hub:** `docker pull flez71/replaydb:${{ steps.version.outputs.version }}`
 
-            View [Full CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+            View [Full CHANGELOG](https://github.com/${{ env.REPOSITORY_LC }}/blob/main/CHANGELOG.md)
           files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -180,7 +186,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
+            ghcr.io/${{ env.REPOSITORY_LC }}:latest
+            ghcr.io/${{ env.REPOSITORY_LC }}:${{ steps.version.outputs.version }}
             flez71/replaydb:latest
             flez71/replaydb:${{ steps.version.outputs.version }}
