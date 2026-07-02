@@ -1,0 +1,13 @@
+services:
+  replaydb:
+    build: .
+    container_name: replaydb_server
+    ports:
+      - "7800:7800"  
+      - "8080:8080"  
+    volumes:
+      - ./data:/home/redb/data
+    environment:
+      - REDB_PORT=7800
+      - REDB_HTTP_PORT=8080
+      - REDB_DATA_DIR=/home/redb/data
