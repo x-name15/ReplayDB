@@ -11,7 +11,7 @@ type frameBuffer struct {
 }
 
 func (f *frameBuffer) WriteByte(b byte) error {
-    return f.buf.WriteByte(b)
+	return f.buf.WriteByte(b)
 }
 
 func (f *frameBuffer) WriteField(data []byte) {
