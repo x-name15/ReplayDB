@@ -83,9 +83,14 @@ jobs:
           git add README.md cmd/redb/version.go
           git diff --staged --quiet || git commit -m "chore: update version to v${VERSION}"
           git push
-          git tag "v${VERSION}"
-          git push origin "v${VERSION}"
 
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${VERSION} already exists."
+          else
+            git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+          fi
+          
       - name: Build Binaries & Package Bundles
         run: |
           mkdir dist
