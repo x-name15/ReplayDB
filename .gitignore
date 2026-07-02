@@ -1,0 +1,18 @@
+#Ignore creds
+.env
+
+# Ignore logs and redb files inside Data
+data/*.log
+data/*.redb
+
+#Examples
+/examples/
+
+#Repomix Archives
+.repomix/
+.repomixignore
+repomix.config.json
+repomix-output*.xml
+
+#Local Actions
+.github/workflows/local.test.yaml

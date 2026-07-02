@@ -9,15 +9,15 @@ import (
 	"github.com/x-name15/replaydb/internal/storage"
 )
 
-// Appender acts as the thread-safe gateway to both the event log and the snapshot store.
 type Appender struct {
 	eventsFile    *os.File
 	snapshotsFile *os.File
 	mutex         sync.Mutex
+	index         *Index
+	nextOffset    int64
 }
 
-// NewAppender initializes the storage engine locks and prepares both file descriptors.
-func NewAppender(dataDir string) (*Appender, error) {
+func NewAppender(dataDir string, index *Index) (*Appender, error) {
 	eventsPath := filepath.Join(dataDir, "events.redb")
 	snapshotsPath := filepath.Join(dataDir, "snapshots.redb")
 
@@ -28,26 +28,35 @@ func NewAppender(dataDir string) (*Appender, error) {
 
 	sFile, err := os.OpenFile(snapshotsPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		eFile.Close() // Rollback if second file fails
+		eFile.Close()
+		return nil, err
+	}
+
+	info, err := eFile.Stat()
+	if err != nil {
+		eFile.Close()
+		sFile.Close()
 		return nil, err
 	}
 
 	return &Appender{
 		eventsFile:    eFile,
 		snapshotsFile: sFile,
+		index:         index,
+		nextOffset:    info.Size(),
 	}, nil
 }
 
-// Append securely encodes and writes a new event to the binary log stream.
-func (a *Appender) Append(aggregateID, eventType string, payload []byte) error {
+func (a *Appender) Append(kind, aggregateID, eventType string, payload []byte) error {
 	record := storage.EventRecord{
-		Timestamp:   time.Now().UTC(),
-		AggregateID: aggregateID,
-		EventType:   eventType,
-		Payload:     payload,
+		Timestamp:     time.Now().UTC(),
+		AggregateKind: kind,
+		AggregateID:   aggregateID,
+		EventType:     eventType,
+		Payload:       payload,
 	}
 
-	bytes, err := record.Encode()
+	encoded, err := record.Encode()
 	if err != nil {
 		return err
 	}
@@ -55,39 +64,47 @@ func (a *Appender) Append(aggregateID, eventType string, payload []byte) error {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
-	if _, err := a.eventsFile.Write(bytes); err != nil {
+	offset := a.nextOffset
+
+	if _, err := a.eventsFile.Write(encoded); err != nil {
 		return err
+	}
+	if err := a.eventsFile.Sync(); err != nil {
+		return err
+	}
+
+	a.nextOffset += int64(len(encoded))
+
+	if a.index != nil {
+		a.index.Add(kind, aggregateID, offset)
 	}
 
 	return nil
 }
 
-// SaveSnapshot securely writes a materialized view of the state to disk.
-func (a *Appender) SaveSnapshot(aggregateID string, version uint32, stateJSON []byte) error {
+func (a *Appender) SaveSnapshot(kind, aggregateID string, version uint32, stateJSON []byte) error {
 	record := storage.SnapshotRecord{
-		Timestamp:   time.Now().UTC(),
-		Version:     version,
-		AggregateID: aggregateID,
-		StateJSON:   stateJSON,
+		Timestamp:     time.Now().UTC(),
+		Version:       version,
+		AggregateKind: kind,
+		AggregateID:   aggregateID,
+		StateJSON:     stateJSON,
 	}
 
-	bytes, err := record.Encode()
+	encoded, err := record.Encode()
 	if err != nil {
 		return err
 	}
 
-	// We use the same mutex to ensure overall storage engine stability
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
-	if _, err := a.snapshotsFile.Write(bytes); err != nil {
+	if _, err := a.snapshotsFile.Write(encoded); err != nil {
 		return err
 	}
-
-	return nil
+	return a.snapshotsFile.Sync()
 }
 
-// Close gracefully releases both file descriptors.
 func (a *Appender) Close() error {
 	a.eventsFile.Close()
 	return a.snapshotsFile.Close()

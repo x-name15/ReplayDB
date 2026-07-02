@@ -3,11 +3,21 @@ services:
     build: .
     container_name: replaydb_server
     ports:
-      - "7800:7800"  
-      - "8080:8080"  
+      - "7800:7800"
+      - "8080:8080"
     volumes:
       - ./data:/home/redb/data
+    # Optional: drop a .env at the repo root (see .env.example) to override
+    # anything below without touching this file. Values set explicitly in
+    # `environment:` still win over `.env` — same precedence as internal/helper/env.go.
+    env_file:
+      - path: ./.env
+        required: false
     environment:
       - REDB_PORT=7800
       - REDB_HTTP_PORT=8080
       - REDB_DATA_DIR=/home/redb/data
+      # Dashboard auth — unset by default (dashboard open, dev-friendly).
+      # Uncomment both to lock down http://localhost:8080 with Basic Auth:
+      # - REDB_DASHBOARD_USER=admin
+      # - REDB_DASHBOARD_PASS=change-me

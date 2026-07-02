@@ -1,0 +1,105 @@
+name: ReplayDB CI Gate / Release Gate
+
+on:
+  push:
+    branches: [ "main", "feature/*" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: false
+
+      - name: Verify Code Formatting
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "These files are not formatted properly:"
+            gofmt -l .
+            echo "Please run 'gofmt -w .' locally and commit the changes."
+            exit 1
+          fi
+
+      - name: Verify go.mod is tidy
+        run: |
+          go mod tidy
+          if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
+            echo "go.mod or go.sum is not tidy. Please run 'go mod tidy' and commit the changes."
+            git diff
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run Tests (Race Detector + Shuffle)
+        run: go test -race -shuffle=on -timeout 30s ./internal/tests/...
+
+      - name: Run Benchmarks (no cache)
+        run: go test -bench=. -benchmem -count=1 -timeout 120s ./internal/benchmarks/...
+
+      - name: Build redb Binary (AMD64)
+        run: CGO_ENABLED=0 go build -ldflags="-s -w" -o redb ./cmd/redb
+
+      - name: Build recli Binary (AMD64)
+        run: CGO_ENABLED=0 go build -ldflags="-s -w" -o recli ./cmd/recli
+
+      - name: Build ARM64 Binaries (Cross-compile)
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o redb-arm64 ./cmd/redb
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o recli-arm64 ./cmd/recli
+
+      - name: Verify ARM64 Binary
+        run: file redb-arm64 | grep "ARM aarch64"
+
+      - name: Build Windows Binaries (AMD64)
+        run: |
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o redb.exe ./cmd/redb
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o recli.exe ./cmd/recli
+
+      - name: Build macOS Binaries (AMD64)
+        run: |
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o redb-darwin ./cmd/redb
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o recli-darwin ./cmd/recli
+
+      - name: Build macOS ARM64 Binaries
+        run: |
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o redb-darwin-arm64 ./cmd/redb
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o recli-darwin-arm64 ./cmd/recli
+
+      - name: Verify Docker Image Size (AMD64)
+        run: |
+          echo "Building Docker image for size verification..."
+          docker build -t replaydb:ci-check .
+
+          echo ""
+          echo "DOCKER IMAGE SIZE REPORT:"
+          docker images replaydb:ci-check
+
+          SIZE_BYTES=$(docker inspect -f "{{ .Size }}" replaydb:ci-check)
+          SIZE_MB=$(awk "BEGIN {printf \"%.2f\", ${SIZE_BYTES}/1048576}")
+
+          echo ""
+          echo "Calculated Size: ${SIZE_MB} MB"
+
+          # scratch image with 2 static binaries + embedded dashboard.
+          # 50MB ceiling — it's a database, not a CLI toy; leaves headroom
+          # for future embedded assets without becoming a licensing target.
+          if awk "BEGIN {exit (${SIZE_MB} > 50.0 ? 0 : 1)}"; then
+            echo "ERROR: The Docker image (${SIZE_MB} MB) exceeded the strict 50MB limit!"
+            echo "Please check for unnecessary dependencies or missing stripped binaries."
+            exit 1
+          fi
+
+          echo "SUCCESS: Image size is within the allowed limits."
+
+      - name: Docker Build Check (AMD64)
+        run: docker build -t replaydb:test .

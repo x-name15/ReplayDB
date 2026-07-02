@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReplayDB Operational Dashboard</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        h1 { color: #38bdf8; border-bottom: 2px solid #334155; padding-bottom: 0.5rem; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .card { background: #1e293b; padding: 1.5rem; border-radius: 8px; border: 1px solid #334155; }
+        .card h3 { margin: 0 0 0.5rem 0; color: #94a3b8; font-size: 0.9rem; text-transform: uppercase; }
+        .card p { margin: 0; font-size: 1.8rem; font-weight: bold; color: #f1f5f9; }
+        .search-box { background: #1e293b; padding: 1.5rem; border-radius: 8px; border: 1px solid #38bdf8; margin-bottom: 2rem; display: flex; gap: 1rem; }
+        input { flex: 1; padding: 0.75rem; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 1rem; }
+        button { background: #38bdf8; color: #0f172a; font-weight: bold; padding: 0.75rem 1.5rem; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+        button:hover { background: #0ea5e9; }
+        pre { background: #0f172a; padding: 1rem; border-radius: 6px; border: 1px solid #334155; overflow-x: auto; color: #34d399; font-size: 0.95rem; }
+        .footer { text-align: center; margin-top: 3rem; color: #475569; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 ReplayDB Live Core Monitor</h1>
+
+        <div class="stats-grid">
+            <div class="card">
+                <h3>Data Directory</h3>
+                <p style="font-size: 1.2rem; word-break: break-all;">{{.DataDir}}</p>
+            </div>
+            <div class="card">
+                <h3>Log Payload Size</h3>
+                <p>{{.LogSize}} Bytes</p>
+            </div>
+            <div class="card">
+                <h3>Snapshot Store Size</h3>
+                <p>{{.SnapshotSize}} Bytes</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🔍 Dynamic State Inspector</h2>
+            <form method="GET" class="search-box">
+                <input type="text" name="kind" placeholder="Aggregate kind (e.g., order)" value="{{.SearchedKind}}" required>
+                <input type="text" name="id" placeholder="Aggregate ID (e.g., test-order-99)" value="{{.SearchedID}}" required>
+                <button type="submit">Reconstruct State</button>
+            </form>
+
+            {{if .SearchedID}}
+                <h3>Reconstructed Materialized View (Time-Travel: NOW)</h3>
+                {{if .Error}}
+                    <p style="color: #ef4444;">❌ Error: {{.Error}}</p>
+                {{else}}
+                    <pre>{{.StateJSON}}</pre>
+                {{end}}
+            {{else}}
+                <p style="color: #64748b;">Submit a kind + Aggregate ID above to inspect its reconstructed state.</p>
+            {{end}}
+        </div>
+
+        <div class="footer">ReplayDB Engine • Architecture Phase 2</div>
+    </div>
+</body>
+</html>

@@ -11,43 +11,98 @@ import (
 	"github.com/x-name15/replaydb/internal/storage"
 )
 
-// ReplayStateAt reconstructs the state of an entity, optimizing the load via Snapshots
-func ReplayStateAt(dataDir string, aggregateID string, targetTime time.Time) (*domain.OrderState, error) {
+func ReplayStateAt(dataDir, kind, aggregateID string, targetTime time.Time, registry *domain.Registry, index *Index) (domain.Aggregate, error) {
 	eventsPath := filepath.Join(dataDir, "events.redb")
 	snapshotsPath := filepath.Join(dataDir, "snapshots.redb")
 
-	// 1. PHASE 1: Attempt to load the most recent valid Snapshot
-	state := domain.NewOrderState(aggregateID)
-	var eventsToSkip uint32 = 0
+	state, err := registry.New(kind, aggregateID)
+	if err != nil {
+		return nil, err
+	}
 
+	var eventsToSkip uint32 = 0
 	snapFile, err := os.Open(snapshotsPath)
 	if err == nil {
 		defer snapFile.Close()
 		for {
 			snap, err := storage.DecodeNextSnapshot(snapFile)
-			if err == storage.ErrCorruptSnapshot {
-				break // If corrupt or empty, we just fallback to full event replay
+			if err == storage.ErrSnapshotChecksumMismatch {
+				continue
 			}
 			if err != nil {
-				break // EOF
+				break
 			}
-
-			// Keep updating our state with the latest snapshot that happened BEFORE our targetTime
-			if snap.AggregateID == aggregateID && !snap.Timestamp.After(targetTime) {
-				json.Unmarshal(snap.StateJSON, state)
+			if snap.AggregateKind == kind && snap.AggregateID == aggregateID && !snap.Timestamp.After(targetTime) {
+				if err := json.Unmarshal(snap.StateJSON, state); err != nil {
+					return nil, fmt.Errorf("engine: failed to unmarshal snapshot for %q: %w", aggregateID, err)
+				}
 				eventsToSkip = snap.Version
 			}
 		}
 	}
 
-	// 2. PHASE 2: Open Event Log and resume stream from where the snapshot left off
+	if index != nil {
+		if offsets := index.Offsets(kind, aggregateID); len(offsets) > 0 {
+			return replayIndexed(eventsPath, offsets, state, targetTime, eventsToSkip)
+		}
+	}
+
+	return replayFullScan(eventsPath, kind, aggregateID, state, targetTime, eventsToSkip)
+}
+
+func replayIndexed(eventsPath string, offsets []int64, state domain.Aggregate, targetTime time.Time, eventsToSkip uint32) (domain.Aggregate, error) {
 	file, err := os.Open(eventsPath)
 	if err != nil {
-		return nil, fmt.Errorf("engine failed to open storage log: %w", err)
+		return nil, fmt.Errorf("engine: failed to open storage log: %w", err)
 	}
 	defer file.Close()
 
-	var eventsSkipped uint32 = 0
+	var eventsSkipped uint32
+	eventsApplied := 0
+
+	for _, offset := range offsets {
+		if _, err := file.Seek(offset, os.SEEK_SET); err != nil {
+			return nil, fmt.Errorf("engine: failed to seek to indexed offset %d: %w", offset, err)
+		}
+
+		record, err := storage.DecodeNext(file)
+		if err == storage.ErrChecksumMismatch {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("engine: stream decode error at indexed offset %d: %w", offset, err)
+		}
+
+		if record.Timestamp.After(targetTime) {
+			break
+		}
+
+		if eventsSkipped < eventsToSkip {
+			eventsSkipped++
+			continue
+		}
+
+		if err := state.Apply(record.EventType, record.Payload, record.Timestamp); err != nil {
+			return nil, fmt.Errorf("engine: domain apply failed on event %q: %w", record.EventType, err)
+		}
+		eventsApplied++
+	}
+
+	if eventsApplied == 0 && eventsToSkip == 0 {
+		return nil, fmt.Errorf("engine: no historical records found for indexed aggregate")
+	}
+
+	return state, nil
+}
+
+func replayFullScan(eventsPath, kind, aggregateID string, state domain.Aggregate, targetTime time.Time, eventsToSkip uint32) (domain.Aggregate, error) {
+	file, err := os.Open(eventsPath)
+	if err != nil {
+		return nil, fmt.Errorf("engine: failed to open storage log: %w", err)
+	}
+	defer file.Close()
+
+	var eventsSkipped uint32
 	eventsApplied := 0
 
 	for {
@@ -55,33 +110,32 @@ func ReplayStateAt(dataDir string, aggregateID string, targetTime time.Time) (*d
 		if err == storage.ErrEOF {
 			break
 		}
-		if err != nil {
-			return nil, fmt.Errorf("engine stream decode error: %w", err)
-		}
-
-		if record.AggregateID != aggregateID {
+		if err == storage.ErrChecksumMismatch {
 			continue
 		}
-
-		if record.Timestamp.After(targetTime) {
-			break // Reached the Time-Travel target
+		if err != nil {
+			return nil, fmt.Errorf("engine: stream decode error: %w", err)
 		}
 
-		// Fast-Forward Optimization: Skip events already processed by the snapshot
+		if record.AggregateKind != kind || record.AggregateID != aggregateID {
+			continue
+		}
+		if record.Timestamp.After(targetTime) {
+			break
+		}
 		if eventsSkipped < eventsToSkip {
 			eventsSkipped++
 			continue
 		}
 
-		// Apply fresh historical events
 		if err := state.Apply(record.EventType, record.Payload, record.Timestamp); err != nil {
-			return nil, fmt.Errorf("engine domain apply panic on event %s: %w", record.EventType, err)
+			return nil, fmt.Errorf("engine: domain apply failed on event %q: %w", record.EventType, err)
 		}
 		eventsApplied++
 	}
 
 	if eventsApplied == 0 && eventsToSkip == 0 {
-		return nil, fmt.Errorf("no historical records found for entity '%s'", aggregateID)
+		return nil, fmt.Errorf("engine: no historical records found for %q/%q", kind, aggregateID)
 	}
 
 	return state, nil

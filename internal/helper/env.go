@@ -6,9 +6,6 @@ import (
 	"strings"
 )
 
-// Load busca y lee un archivo .env, inyectando sus variables en el sistema operativo.
-// Si el archivo no existe, no devuelve error, permitiendo que el sistema funcione
-// con variables inyectadas externamente (ej. Docker).
 func Load(filepath string) error {
 	file, err := os.Open(filepath)
 	if err != nil {
@@ -29,7 +26,7 @@ func Load(filepath string) error {
 
 		idx := strings.Index(line, "=")
 		if idx == -1 {
-			continue 
+			continue
 		}
 
 		key := strings.TrimSpace(line[:idx])
