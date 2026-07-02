@@ -73,12 +73,6 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Stop here if this version was already released
-        if: steps.tagcheck.outputs.exists == 'true'
-        run: |
-          echo "v${{ steps.version.outputs.version }} already tagged — CHANGELOG.md wasn't bumped. Nothing to release."
-          exit 1
-
       - name: Update files and Commit
         run: |
           VERSION="${{ steps.version.outputs.version }}"
