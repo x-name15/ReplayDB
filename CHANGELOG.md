@@ -2,6 +2,23 @@
 
 All notable changes to ReplayDB are documented in this file.
 
+## [1.1.2] - 2026-07-03 — Zero-Dependency Network Compression
+
+### Added
+
+#### Networking & Protocol
+- Implemented transparent payload compression for the binary TCP wire protocol using the Go standard library (`compress/gzip`).
+  - `pkg/wire/protocol.go`: Modified `writeFrame` and `readFrame` to automatically compress and decompress all packets on the fly.
+  - Configured the encoder to use `gzip.BestSpeed` to aggressively reduce bandwidth consumption for `AppendBatch` payloads and `OpWatch` streaming without taxing server CPU resources.
+  - Maintained the core architectural promise: **Zero external dependencies.**
+#### Security
+- Added native zip-bomb protection in the networking layer.
+  - `readFrame` now utilizes `io.LimitReader` mapped to the `maxFieldLen` boundary. This strictly prevents memory exhaustion attacks by halting decompression if a maliciously crafted compressed frame expands beyond the safe memory threshold.
+
+### Changed
+- **BREAKING (Internal):** The TCP wire format now expects Gzip-encoded payloads. Both the ReplayDB server and the Go SDK must be updated to this version to communicate successfully.
+
+---
 ## [1.1.1] - 2026-07-03 — Real-Time Event Streaming & Watchers
 
 ### Added

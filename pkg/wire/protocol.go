@@ -1,6 +1,8 @@
 package wire
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -208,10 +210,23 @@ func ReadResponse(r io.Reader) (*Response, error) {
 }
 
 func writeFrame(w io.Writer, body []byte) error {
-	if err := binary.Write(w, binary.LittleEndian, uint32(len(body))); err != nil {
+	var buf bytes.Buffer
+	gw, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
 		return err
 	}
-	_, err := w.Write(body)
+	if _, err := gw.Write(body); err != nil {
+		return err
+	}
+	if err := gw.Close(); err != nil {
+		return err
+	}
+
+	compressed := buf.Bytes()
+	if err := binary.Write(w, binary.LittleEndian, uint32(len(compressed))); err != nil {
+		return err
+	}
+	_, err = w.Write(compressed)
 	return err
 }
 
@@ -221,11 +236,28 @@ func readFrame(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	if l > maxFieldLen {
-		return nil, fmt.Errorf("wire: frame length %d exceeds max %d", l, maxFieldLen)
+		return nil, fmt.Errorf("wire: compressed frame length %d exceeds max %d", l, maxFieldLen)
 	}
-	buf := make([]byte, l)
-	if _, err := io.ReadFull(r, buf); err != nil {
+	
+	compressed := make([]byte, l)
+	if _, err := io.ReadFull(r, compressed); err != nil {
 		return nil, err
 	}
-	return buf, nil
+	
+	gr, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		return nil, fmt.Errorf("wire: gzip decode failed: %w", err)
+	}
+	defer gr.Close()
+
+	lr := io.LimitReader(gr, int64(maxFieldLen)+1)
+	body, err := io.ReadAll(lr)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > int(maxFieldLen) {
+		return nil, fmt.Errorf("wire: uncompressed frame exceeds max %d", maxFieldLen)
+	}
+	
+	return body, nil
 }
