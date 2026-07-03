@@ -1,7 +1,8 @@
 # Changelog
 
 All notable changes to ReplayDB are documented in this file.
-## [1.0.1] - 2026-07-03 - Major General Fixes for Stability
+
+## [1.0.1] - 2026-07-03 — Major General Fixes for Stability
 
 ### Added
 
