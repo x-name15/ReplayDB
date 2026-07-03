@@ -36,15 +36,23 @@ type Response struct {
 	Body    []byte
 }
 
-const maxFieldLen = 64 * 1024 * 1024
+const defaultMaxFieldLen = 64 * 1024 * 1024
+
+var maxFieldLen uint32 = defaultMaxFieldLen
+
+func SetMaxFieldLen(n uint32) {
+	if n == 0 {
+		maxFieldLen = defaultMaxFieldLen
+		return
+	}
+	maxFieldLen = n
+}
 
 func WriteRequest(w io.Writer, req *Request) error {
 	body := new(frameBuffer)
-
 	body.WriteByte(byte(req.Op))
 	body.WriteField([]byte(req.Kind))
 	body.WriteField([]byte(req.ID))
-
 	switch req.Op {
 	case OpAppend:
 		body.WriteField([]byte(req.EventType))
@@ -55,7 +63,6 @@ func WriteRequest(w io.Writer, req *Request) error {
 	default:
 		return fmt.Errorf("wire: unknown opcode %d", req.Op)
 	}
-
 	return writeFrame(w, body.Bytes())
 }
 
@@ -65,25 +72,21 @@ func ReadRequest(r io.Reader) (*Request, error) {
 		return nil, err
 	}
 	fr := newFrameReader(frame)
-
 	opByte, err := fr.ReadByte()
 	if err != nil {
 		return nil, err
 	}
 	req := &Request{Op: Opcode(opByte)}
-
 	kind, err := fr.ReadField()
 	if err != nil {
 		return nil, err
 	}
 	req.Kind = string(kind)
-
 	id, err := fr.ReadField()
 	if err != nil {
 		return nil, err
 	}
 	req.ID = string(id)
-
 	switch req.Op {
 	case OpAppend:
 		evtType, err := fr.ReadField()
@@ -106,7 +109,6 @@ func ReadRequest(r io.Reader) (*Request, error) {
 	default:
 		return nil, fmt.Errorf("wire: unknown opcode %d in frame", req.Op)
 	}
-
 	return req, nil
 }
 
@@ -124,7 +126,6 @@ func ReadResponse(r io.Reader) (*Response, error) {
 		return nil, err
 	}
 	fr := newFrameReader(frame)
-
 	statusByte, err := fr.ReadByte()
 	if err != nil {
 		return nil, err
@@ -137,7 +138,6 @@ func ReadResponse(r io.Reader) (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return &Response{
 		Status:  Status(statusByte),
 		Message: string(msg),

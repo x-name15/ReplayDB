@@ -1,7 +1,88 @@
 # Changelog
 
 All notable changes to ReplayDB are documented in this file.
+## [1.0.1] - 2026-07-03 - Major General Fixes for Stability
 
+### Added
+
+#### Security
+- Added shared-token authentication for the TCP wire protocol.
+  - `internal/wire/auth.go`
+    - Introduced `WriteAuthToken` / `ReadAuthToken` using the existing framing protocol.
+    - Added `TokensEqual` based on `subtle.ConstantTimeCompare` to mitigate timing attacks.
+  - `cmd/redb/main.go`
+    - Added the `REDB_AUTH_TOKEN` environment variable.
+    - Connections must authenticate before sending `OpAppend`, `OpReplay`, or `OpSnapshot`.
+    - Connections providing an invalid token or failing to authenticate before `connReadTimeout` are closed without processing requests.
+  - `cmd/recli/helper/client.go`
+    - The CLI automatically sends `REDB_AUTH_TOKEN` (when available) as the first frame of every connection.
+  - Added a startup warning when the server is launched without `REDB_AUTH_TOKEN`, following the same pattern used for `REDB_DASHBOARD_USER` and `REDB_DASHBOARD_PASS`.
+#### Configuration
+- Added `internal/helper/env.go` with `GetEnvInt(key, fallback)` for safely reading integer environment variables.
+- Added the following server configuration options:
+  - `REDB_MAX_CONNECTIONS` (default: **500**).
+  - `REDB_MAX_PAYLOAD_BYTES` (default: **4 MB**).
+  - Payload limits are applied through `wire.SetMaxFieldLen`.
+- `internal/wire/protocol.go`
+  - Replaced the fixed `maxFieldLen` constant with a runtime-configurable value via `wire.SetMaxFieldLen(n)`.
+  - The default remains **64 MB** (`defaultMaxFieldLen`) when unset or configured with `0`.
+#### Networking
+- Added connection limiting using a semaphore (`connSem`) in the accept loop.
+  - Connections exceeding the configured limit are rejected immediately with an error response before being closed.
+  - The `Accept()` loop remains non-blocking.
+- Added startup logs displaying the configured connection limit and maximum payload size.
+- Added a centralized `writeResponse(conn, resp)` helper that applies `conn.SetWriteDeadline` before every response write.
+- Added a new `connWriteTimeout` constant (15 seconds).
+#### Snapshot Indexing
+- `internal/engine/index.go`
+  - Added snapshot indexing through `snapshotOffsets`.
+  - Introduced `AddSnapshot(kind, id, offset)` and `SnapshotOffsets(kind, id)`.
+- Snapshot index rebuilding at startup.
+  - `Rebuild()` now scans `snapshots.redb` during boot to populate the snapshot index.
+  - Separate statistics are logged for aggregates, snapshots, and corrupt entries.
+- `internal/engine/appender.go`
+  - Added `nextSnapshotOffset`, initialized from the current size of `snapshots.redb`.
+  - Every successful snapshot write automatically updates the snapshot index.
+- `internal/engine/replay.go`
+  - Added `latestIndexedSnapshot`, allowing replay to seek directly to indexed snapshot offsets instead of scanning the entire snapshot file.
+#### Archiving
+- Added `internal/engine/archiver.go`.
+  - Introduced an `Archiver` that periodically mirrors appended data from `events.redb` and `snapshots.redb` into a separate archive directory.
+  - The archiver is append-only and never modifies, truncates, or deletes live data.
+  - Resumes automatically from the destination file size, making interrupted runs safe without requiring additional metadata.
+- Added archive configuration:
+  - `REDB_ARCHIVE_DIR`
+  - `REDB_ARCHIVE_INTERVAL` (Go duration format, e.g. `6h`, `24h`)
+  - When configured, the archiver starts automatically, performs an immediate synchronization, and continues at the configured interval.
+- Added graceful shutdown support.
+  - On `SIGINT` or `SIGTERM`, one final archive cycle is executed before the process exits.
+- Added boot logging indicating whether archiving is enabled and showing the configured archive interval.
+
+### Changed
+
+#### Security
+- `handleConnection` now accepts an additional `authToken string` parameter.
+#### Configuration
+- Reduced the default maximum payload size from **64 MB** to **4 MB** to lower the per-connection memory footprint.
+- Payload size remains fully configurable and can be increased beyond **64 MB** if required.
+#### Networking
+- All responses (`OpAppend`, `OpReplay`, `OpSnapshot`, and error responses) are now written through `writeResponse`, ensuring every write operation is protected by a write deadline.
+- Write failures are now logged instead of being silently ignored, improving visibility into slow or disconnected clients.
+#### Replay
+- `ReplayStateAt` now prefers indexed snapshot lookups whenever snapshot offsets are available.
+- The previous full scan of `snapshots.redb` is retained as a fallback when no snapshot index exists.
+
+### Documentation
+- Updated `.env.example` to document:
+  - `REDB_AUTH_TOKEN`
+  - `REDB_MAX_CONNECTIONS`
+  - `REDB_MAX_PAYLOAD_BYTES`
+  - `REDB_ARCHIVE_DIR`
+  - `REDB_ARCHIVE_INTERVAL`
+- Archive configuration documentation explicitly states that the feature is intended for backup purposes only and never modifies the source files.
+- **Recommendation:** Update the README to advise configuring `REDB_AUTH_TOKEN` before exposing `REDB_PORT` outside localhost or another trusted network.
+
+---
 ## [1.0.0] - 2026-07-03 — Stable Release
 
 ### Added

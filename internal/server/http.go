@@ -17,6 +17,7 @@ import (
 	"github.com/x-name15/replaydb/internal/metrics"
 )
 
+//go:embed templates/dashboard.html
 var templatesFS embed.FS
 
 type DashboardData struct {

@@ -3,6 +3,7 @@ package helper
 import (
 	"fmt"
 	"net"
+	"os"
 
 	"github.com/x-name15/replaydb/internal/wire"
 )
@@ -13,7 +14,11 @@ func DialAndRoundTrip(serverAddr string, req *wire.Request) (*wire.Response, err
 		return nil, fmt.Errorf("connection failure: ReplayDB engine offline at %s", serverAddr)
 	}
 	defer conn.Close()
-
+	if token := os.Getenv("REDB_AUTH_TOKEN"); token != "" {
+		if err := wire.WriteAuthToken(conn, token); err != nil {
+			return nil, fmt.Errorf("failed to send auth token: %w", err)
+		}
+	}
 	if err := wire.WriteRequest(conn, req); err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
