@@ -238,12 +238,12 @@ func readFrame(r io.Reader) ([]byte, error) {
 	if l > maxFieldLen {
 		return nil, fmt.Errorf("wire: compressed frame length %d exceeds max %d", l, maxFieldLen)
 	}
-	
+
 	compressed := make([]byte, l)
 	if _, err := io.ReadFull(r, compressed); err != nil {
 		return nil, err
 	}
-	
+
 	gr, err := gzip.NewReader(bytes.NewReader(compressed))
 	if err != nil {
 		return nil, fmt.Errorf("wire: gzip decode failed: %w", err)
@@ -258,6 +258,6 @@ func readFrame(r io.Reader) ([]byte, error) {
 	if len(body) > int(maxFieldLen) {
 		return nil, fmt.Errorf("wire: uncompressed frame exceeds max %d", maxFieldLen)
 	}
-	
+
 	return body, nil
 }
