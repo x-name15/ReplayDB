@@ -168,14 +168,6 @@ Releases are generated automatically from [`CHANGELOG.md`](./CHANGELOG.md).
 
 ---
 
-## Status
-
-ReplayDB is still in its early stages. The storage engine, wire protocol, indexing, and CLI are implemented and tested, but the project has not yet been validated under real production workloads.
-
-Treat ReplayDB as **pre-1.0**. The on-disk format and wire protocol may evolve until the first stable `v1.0.0` release.
-
----
-
 ## License
 
 ReplayDB is licensed under the GPL v3. See [`LICENSE`](./LICENSE) for details.
