@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/x-name15/replaydb/internal/wire"
+	"github.com/x-name15/replaydb/pkg/wire"
 )
 
 func BenchmarkWire_WriteRequest_Append(b *testing.B) {

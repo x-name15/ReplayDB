@@ -7,6 +7,7 @@ import (
 
 	"github.com/x-name15/replaydb/internal/domain"
 	"github.com/x-name15/replaydb/internal/engine"
+	"github.com/x-name15/replaydb/pkg/wire"
 )
 
 type counterState struct {
@@ -126,4 +127,35 @@ func seedReplayLog(b *testing.B, noise int) (string, *engine.Index) {
 	appender.Close()
 
 	return dir, index
+}
+
+func BenchmarkAppender_AppendBatch_1000(b *testing.B) {
+	dir := b.TempDir()
+	index := engine.NewIndex()
+	appender, err := engine.NewAppender(dir, index)
+	if err != nil {
+		b.Fatalf("NewAppender failed: %v", err)
+	}
+	defer appender.Close()
+
+	payload := []byte(`{}`)
+	batchSize := 1000
+	events := make([]wire.BatchEvent, batchSize)
+	for i := 0; i < batchSize; i++ {
+		events[i] = wire.BatchEvent{
+			Kind:      "counter",
+			ID:        "bench-agg",
+			EventType: "Increment",
+			Payload:   payload,
+		}
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Envia 1,000 eventos con un solo fsync()
+		if err := appender.AppendBatch(events); err != nil {
+			b.Fatalf("AppendBatch failed: %v", err)
+		}
+	}
 }

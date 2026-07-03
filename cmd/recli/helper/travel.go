@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/x-name15/replaydb/internal/wire"
+	"github.com/x-name15/replaydb/pkg/wire"
 )
 
 func RunTravel(serverAddr string, args []string) {

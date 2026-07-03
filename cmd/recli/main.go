@@ -28,6 +28,8 @@ func main() {
 		helper.RunTravel(serverAddr, args)
 	case "snapshot":
 		db.RunSnapshot(serverAddr, args)
+	case "import":
+		db.RunImport(serverAddr, os.Args[2:])
 	case "help", "-h", "--help":
 		printUsage()
 	default:

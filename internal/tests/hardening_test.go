@@ -2,12 +2,13 @@ package tests
 
 import (
 	"bytes"
-	"github.com/x-name15/replaydb/internal/engine"
-	"github.com/x-name15/replaydb/internal/wire"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/x-name15/replaydb/internal/engine"
+	"github.com/x-name15/replaydb/pkg/wire"
 )
 
 // --- Fix 1: wire auth handshake ---

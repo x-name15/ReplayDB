@@ -18,7 +18,7 @@ import (
 	"github.com/x-name15/replaydb/internal/helper"
 	"github.com/x-name15/replaydb/internal/metrics"
 	"github.com/x-name15/replaydb/internal/server"
-	"github.com/x-name15/replaydb/internal/wire"
+	"github.com/x-name15/replaydb/pkg/wire"
 )
 
 const connReadTimeout = 30 * time.Second
@@ -160,12 +160,14 @@ func handleConnection(conn net.Conn, appender *engine.Appender, dirPath string, 
 			return
 		}
 		switch req.Op {
-		case wire.OpAppend:
-			if err := appender.Append(req.Kind, req.ID, req.EventType, req.Payload); err != nil {
-				writeErr(conn, fmt.Sprintf("storage engine error: %v", err))
+
+		case wire.OpAppendBatch:
+			if err := appender.AppendBatch(req.Batch); err != nil {
+				writeErr(conn, fmt.Sprintf("storage engine error on batch: %v", err))
 				continue
 			}
-			writeResponse(conn, &wire.Response{Status: wire.StatusOK, Message: "event logged"})
+			writeResponse(conn, &wire.Response{Status: wire.StatusOK, Message: "batch logged successfully"})
+
 		case wire.OpReplay:
 			targetTime := time.Unix(0, req.TargetTS)
 			state, err := engine.ReplayStateAt(dirPath, req.Kind, req.ID, targetTime, registry, index)
@@ -175,6 +177,7 @@ func handleConnection(conn net.Conn, appender *engine.Appender, dirPath string, 
 			}
 			stateBytes, _ := json.Marshal(state)
 			writeResponse(conn, &wire.Response{Status: wire.StatusOK, Body: stateBytes})
+
 		case wire.OpSnapshot:
 			state, err := engine.ReplayStateAt(dirPath, req.Kind, req.ID, time.Now().UTC(), registry, index)
 			if err != nil {
@@ -187,6 +190,7 @@ func handleConnection(conn net.Conn, appender *engine.Appender, dirPath string, 
 				continue
 			}
 			writeResponse(conn, &wire.Response{Status: wire.StatusOK, Message: "snapshot persisted"})
+
 		default:
 			writeErr(conn, "unknown opcode")
 		}

@@ -2,6 +2,42 @@
 
 All notable changes to ReplayDB are documented in this file.
 
+## [1.1.0] - 2026-07-03 — Official Go SDK & Public Protocol Exposure
+
+### Added
+
+#### Engine & Storage
+- Introduced high-performance event batching to drastically reduce disk I/O bottlenecks.
+  - `internal/engine/appender.go`: Added `AppendBatch(events)` which processes an array of events in memory and performs a single `fsync()` at the end of the operation, massively multiplying throughput for bulk inserts.
+
+#### Networking & Protocol
+- `pkg/wire/protocol.go`: Expanded the binary TCP protocol with a new `OpAppendBatch` (0x04) operation.
+  - Added the `BatchEvent` struct to represent individual events within a batch frame.
+  - The protocol now safely iterates and decodes variable-length batches while respecting existing memory boundaries (`maxFieldLen`).
+- `cmd/redb`: The core TCP server loop now recognizes and efficiently processes incoming `OpAppendBatch` requests.
+
+#### SDK
+- Introduced the official Go SDK under `sdk/go/` featuring a clean, idiomatic, and context-aware `Client` interface.
+  - `sdk/go/client.go`
+    - Implemented `NewClient(cfg Config)` with support for network deadlines and configurable timeouts.
+    - Added `Append(ctx, kind, id, eventType, payload)` for injecting runtime-safe immutable events.
+    - Added `Travel(ctx, kind, id, at)` utilizing the RFC3339 time format over payload boundaries to reconstruct state at specific points in time.
+    - Added `Snapshot(ctx, kind, id)` to programmatically trigger server-side state consolidation.
+    - Errors across the entire SDK layer standardised to descriptive English text.
+    - `sdk/go/client.go`: Exposed the new batching capability to external consumers via the `AppendBatch(ctx context.Context, events []wire.BatchEvent)` method.
+#### Repository Management
+- Added a unified Go workspace configuration (`go.work`) at the repository root.
+  - Streamlines local multi-module development, enabling simultaneous tracking of the engine module (`.`) and the decoupled client SDK module (`./sdk/go`).
+
+### Changed
+
+#### Architecture & Refactoring
+- Promoted the binary framing protocol out of the isolation layer to make it accessible to external consumers.
+  - Moved `internal/wire/` to `pkg/wire/`.
+  - Updated all internal package resolution rules across the core engine (`cmd/redb`), dashboard templates, and the interactive CLI tool (`cmd/recli`) to bind to the new public `pkg/wire` layout.
+
+
+---
 ## [1.0.1] - 2026-07-03 — Major General Fixes for Stability
 
 ### Added

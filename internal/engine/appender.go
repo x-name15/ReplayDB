@@ -9,6 +9,7 @@ import (
 
 	"github.com/x-name15/replaydb/internal/metrics"
 	"github.com/x-name15/replaydb/internal/storage"
+	"github.com/x-name15/replaydb/pkg/wire"
 )
 
 type Appender struct {
@@ -127,6 +128,53 @@ func (a *Appender) SaveSnapshot(kind, aggregateID string, version uint32, stateJ
 	log.Printf("[SNAPSHOT] ✓ %s/%s @version=%d (%d bytes, %s)\n",
 		kind, aggregateID, version, len(encoded), time.Since(start))
 	metrics.RecordSnapshot(nil)
+	return nil
+}
+
+func (a *Appender) AppendBatch(events []wire.BatchEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	start := time.Now()
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+
+	for _, ev := range events {
+		record := storage.EventRecord{
+			Timestamp:     time.Now().UTC(),
+			AggregateKind: ev.Kind,
+			AggregateID:   ev.ID,
+			EventType:     ev.EventType,
+			Payload:       ev.Payload,
+		}
+
+		encoded, err := record.Encode()
+		if err != nil {
+			log.Printf("[APPEND_BATCH] ✗ encode failed for %s/%s: %v\n", ev.Kind, ev.ID, err)
+			return err
+		}
+
+		offset := a.nextOffset
+		n, err := a.eventsFile.Write(encoded)
+		if err != nil {
+			log.Printf("[APPEND_BATCH] ✗ write failed: %v\n", err)
+			return err
+		}
+
+		a.nextOffset += int64(n)
+
+		if a.index != nil {
+			a.index.Add(ev.Kind, ev.ID, offset)
+		}
+	}
+
+	if err := a.eventsFile.Sync(); err != nil {
+		log.Printf("[APPEND_BATCH] ✗ batch sync failed: %v\n", err)
+		return err
+	}
+
+	log.Printf("[APPEND_BATCH] ✓ %d events committed in %v\n", len(events), time.Since(start))
 	return nil
 }
 

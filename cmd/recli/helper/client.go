@@ -5,7 +5,7 @@ import (
 	"net"
 	"os"
 
-	"github.com/x-name15/replaydb/internal/wire"
+	"github.com/x-name15/replaydb/pkg/wire"
 )
 
 func DialAndRoundTrip(serverAddr string, req *wire.Request) (*wire.Response, error) {
