@@ -2,6 +2,34 @@
 
 All notable changes to ReplayDB are documented in this file.
 
+## [1.0.0] - 2026-07-03 — Stable Release
+
+### Added
+- `internal/domain`: generic `Aggregate` interface and `Registry`, so ReplayDB no longer assumes a specific domain (e.g. `Order`) and any consumer can register their own.
+- `internal/wire`: binary, length-prefixed TCP wire protocol, replacing the previous pipe-delimited text protocol (which broke on payloads containing `|`).
+- `internal/engine/index.go`: in-memory `(kind, id) → offsets` index. `ReplayStateAt` seeks directly to an aggregate's events instead of scanning the entire log; falls back to a full scan when no index is available.
+- `internal/server`: HTTP dashboard with optional HTTP Basic Auth (`REDB_DASHBOARD_USER` / `REDB_DASHBOARD_PASS`), request timeouts, and the HTML template extracted to `templates/dashboard.html` (embedded via `go:embed`, keeping the binary self-contained).
+- `cmd/redb`: graceful shutdown on `SIGINT`/`SIGTERM` — waits for in-flight connections before exiting instead of dropping them.
+- `cmd/redb`: per-connection read deadline (30s) on the TCP wire server, preventing a slow or idle client from holding a goroutine/file descriptor open indefinitely.
+- `internal/storage`: every `EventRecord`/`SnapshotRecord` now carries a CRC32 checksum; corrupted records are detected and skipped during replay instead of silently propagating garbage.
+- `internal/engine/appender.go`: explicit `fsync()` after every write, so a committed event is durable on disk before the caller gets an `OK`.
+- `internal/metrics`: hand-written Prometheus text-exposition format, zero dependencies (no client library). Exposed at `/metrics` on the same HTTP server as the dashboard. Tracks `Append`/`ReplayStateAt`/`SaveSnapshot` counts, errors, and average latency; which replay path was taken (indexed vs. full-scan); active/total TCP connections; on-disk log sizes; and the number of distinct aggregates tracked by the in-memory index.
+- `cmd/redb`, `internal/engine`: structured terminal logging (`[boot]`, `[conn]`, `[APPEND]`, `[TRAVEL]`, `[SNAPSHOT]`, `[INDEX]`) for every core operation — connection lifecycle, each append/replay/snapshot with duration and outcome, and index rebuild summary at startup.
+
+### Fixed
+- Dashboard error/state output goes through `html/template`'s automatic escaping (no reflected-XSS surface via the `kind`/`id` query params).
+- Basic Auth credential comparison uses `crypto/subtle.ConstantTimeCompare` to avoid leaking credential length/content via timing.
+- `/metrics` is unauthenticated by default (Prometheus convention, scraped from a trusted network) — put it behind a proxy/firewall the same way as `REDB_DASHBOARD_*` if exposing beyond localhost.
+
+### Documentation
+- `docs/DOCUMENTATION.md`: explicit "Guaranteed / Not guaranteed" tables replacing implied behavior — durability, corruption detection, per-aggregate ordering, and time-travel correctness on one side; no cross-aggregate transactions, no tamper resistance, no HA/replication, no retention, and no rate limiting on the other.
+
+### Known limitations
+- `Index.Rebuild()` is a synchronous full-log scan at startup; on very large logs this adds to boot time. No persisted index format yet.
+- No connection/request rate-limiting at the application layer.
+- CRC32 protects against accidental corruption, not deliberate tampering.
+
+---
 ## [0.1.0] - 2026-07-02 — Initial event store core and Release of ReplayDB
 
 ### Added

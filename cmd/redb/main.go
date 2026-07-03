@@ -1,20 +1,29 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/x-name15/replaydb/internal/domain"
 	"github.com/x-name15/replaydb/internal/engine"
 	"github.com/x-name15/replaydb/internal/helper"
+	"github.com/x-name15/replaydb/internal/metrics"
 	"github.com/x-name15/replaydb/internal/server"
 	"github.com/x-name15/replaydb/internal/wire"
 )
+
+// connReadTimeout bounds how long the server waits for a client to send a
+// request before dropping the connection.
+const connReadTimeout = 30 * time.Second
 
 func main() {
 	if err := helper.Load(".env"); err != nil {
@@ -33,17 +42,18 @@ func main() {
 	}
 
 	os.MkdirAll(dirPath, 0755)
+
 	registry := domain.NewRegistry()
 	registry.Register("order", func(id string) domain.Aggregate {
 		return domain.NewOrderState(id)
 	})
+	log.Println("[boot] registered aggregate kinds: order")
+
+	// index.Rebuild logs its own summary (aggregates/events/corrupt count).
 	index := engine.NewIndex()
-	log.Println("☑ Building event index from existing log...")
-	indexStart := time.Now()
 	if err := index.Rebuild(dirPath); err != nil {
 		log.Fatalf("Critical: Failed to build event index: %v", err)
 	}
-	log.Printf("☑ Index built in %s\n", time.Since(indexStart))
 
 	appender, err := engine.NewAppender(dirPath, index)
 	if err != nil {
@@ -57,18 +67,46 @@ func main() {
 	if err != nil {
 		log.Fatalf("Critical: TCP binding failure on port %s: %v", port, err)
 	}
-	defer listener.Close()
 
-	fmt.Printf("ReplayDB Server online. Listening on TCP port %s\n", port)
-	fmt.Printf("Storage path bound to directory: %s\n", dirPath)
+	log.Printf("[boot] ReplayDB online — TCP %s | data dir %s\n", port, dirPath)
+
+	var activeConns sync.WaitGroup
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		log.Println("[shutdown] signal received, closing TCP listener...")
+		listener.Close()
+	}()
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Printf("⚠ Network connection error: %v\n", err)
-			continue
+			select {
+			case <-ctx.Done():
+				log.Println("[shutdown] listener closed, waiting for in-flight connections...")
+				activeConns.Wait()
+				log.Println("[shutdown] ReplayDB shut down cleanly.")
+				return
+			default:
+				log.Printf("⚠ Network connection error: %v\n", err)
+				continue
+			}
 		}
-		go handleConnection(conn, appender, dirPath, registry, index)
+
+		remote := conn.RemoteAddr().String()
+		log.Printf("[conn] ↳ opened %s\n", remote)
+		metrics.ConnOpened()
+
+		activeConns.Add(1)
+		go func() {
+			defer activeConns.Done()
+			handleConnection(conn, appender, dirPath, registry, index)
+			metrics.ConnClosed()
+			log.Printf("[conn] ↲ closed %s\n", remote)
+		}()
 	}
 }
 
@@ -76,6 +114,10 @@ func handleConnection(conn net.Conn, appender *engine.Appender, dirPath string, 
 	defer conn.Close()
 
 	for {
+		if err := conn.SetReadDeadline(time.Now().Add(connReadTimeout)); err != nil {
+			return
+		}
+
 		req, err := wire.ReadRequest(conn)
 		if err != nil {
 			return
@@ -119,5 +161,6 @@ func handleConnection(conn net.Conn, appender *engine.Appender, dirPath string, 
 }
 
 func writeErr(conn net.Conn, msg string) {
+	log.Printf("[wire] ✗ %v\n", msg)
 	wire.WriteResponse(conn, &wire.Response{Status: wire.StatusErr, Message: msg})
 }

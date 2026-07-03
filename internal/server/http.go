@@ -14,6 +14,7 @@ import (
 
 	"github.com/x-name15/replaydb/internal/domain"
 	"github.com/x-name15/replaydb/internal/engine"
+	"github.com/x-name15/replaydb/internal/metrics"
 )
 
 var templatesFS embed.FS
@@ -31,18 +32,13 @@ type DashboardData struct {
 func basicAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	user := os.Getenv("REDB_DASHBOARD_USER")
 	pass := os.Getenv("REDB_DASHBOARD_PASS")
-
 	if user == "" || pass == "" {
 		return next
 	}
-
 	return func(w http.ResponseWriter, r *http.Request) {
 		gotUser, gotPass, ok := r.BasicAuth()
-
-		// constant-time comparison to avoid leaking credential length/content via timing
 		userMatch := subtle.ConstantTimeCompare([]byte(gotUser), []byte(user)) == 1
 		passMatch := subtle.ConstantTimeCompare([]byte(gotPass), []byte(pass)) == 1
-
 		if !ok || !userMatch || !passMatch {
 			w.Header().Set("WWW-Authenticate", `Basic realm="ReplayDB Dashboard"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -63,7 +59,6 @@ func StartHTTPServer(port string, dataDir string, registry *domain.Registry, ind
 	mux.HandleFunc("/", basicAuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		eventsPath := filepath.Join(dataDir, "events.redb")
 		snapshotsPath := filepath.Join(dataDir, "snapshots.redb")
-
 		var logSize, snapSize int64
 		if fi, err := os.Stat(eventsPath); err == nil {
 			logSize = fi.Size()
@@ -71,7 +66,6 @@ func StartHTTPServer(port string, dataDir string, registry *domain.Registry, ind
 		if fi, err := os.Stat(snapshotsPath); err == nil {
 			snapSize = fi.Size()
 		}
-
 		data := DashboardData{
 			DataDir:      dataDir,
 			LogSize:      logSize,
@@ -79,7 +73,6 @@ func StartHTTPServer(port string, dataDir string, registry *domain.Registry, ind
 			SearchedKind: r.URL.Query().Get("kind"),
 			SearchedID:   r.URL.Query().Get("id"),
 		}
-
 		if data.SearchedID != "" && data.SearchedKind != "" {
 			state, err := engine.ReplayStateAt(dataDir, data.SearchedKind, data.SearchedID, time.Now().UTC(), registry, index)
 			if err != nil {
@@ -93,13 +86,17 @@ func StartHTTPServer(port string, dataDir string, registry *domain.Registry, ind
 				}
 			}
 		}
-
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := tmpl.Execute(w, data); err != nil {
-
 			log.Printf("server: template execute error: %v", err)
 		}
 	}))
+
+	// /metrics is intentionally unauthenticated by default, following the
+	// Prometheus convention (scraped from a trusted internal network). If
+	// you're exposing this beyond localhost, put it behind a reverse
+	// proxy or firewall rule the same way you would for REDB_DASHBOARD_*.
+	mux.HandleFunc("/metrics", metrics.Handler(dataDir, index.Len))
 
 	srv := &http.Server{
 		Addr:              port,
@@ -114,9 +111,10 @@ func StartHTTPServer(port string, dataDir string, registry *domain.Registry, ind
 	if os.Getenv("REDB_DASHBOARD_USER") == "" || os.Getenv("REDB_DASHBOARD_PASS") == "" {
 		authNote = " (⚠ no auth configured — set REDB_DASHBOARD_USER/REDB_DASHBOARD_PASS to lock it down)"
 	}
-	fmt.Printf("Web UI Monitor dashboard online at http://localhost%s%s\n", port, authNote)
+	log.Printf("[boot] dashboard online at http://localhost%s%s\n", port, authNote)
+	log.Printf("[boot] metrics available at http://localhost%s/metrics\n", port)
 
 	if err := srv.ListenAndServe(); err != nil {
-		fmt.Printf("⚠ Failed to bind Web UI HTTP server: %v\n", err)
+		log.Printf("⚠ Failed to bind Web UI HTTP server: %v\n", err)
 	}
 }
