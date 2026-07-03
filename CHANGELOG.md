@@ -2,6 +2,23 @@
 
 All notable changes to ReplayDB are documented in this file.
 
+## [1.1.1] - 2026-07-03 — Real-Time Event Streaming & Watchers
+
+### Added
+
+#### Engine & Storage
+- Introduced a database-native Log Tailing mechanism for real-time event streaming.
+  - `internal/engine/appender.go`: Added a global observer registry (`RegisterWatcher`, `RemoveWatcher`).
+  - The engine now asynchronously broadcasts committed events to all active watchers immediately following a successful `fsync()`. This ensures zero-latency propagation without the complexity of an internal message broker.
+#### Networking & Protocol
+- Expanded the binary TCP protocol to support long-lived, stateful streaming connections.
+  - `pkg/wire/protocol.go`: Introduced the new `OpWatch` (0x05) operation.
+  - `cmd/redb`: The TCP server now supports persistent connections for `OpWatch` requests. It implements efficient tail filtering on the client's goroutine, routing only the requested `Kind` and `ID` events over the network to minimize bandwidth overhead.
+#### SDK
+- Exposed real-time subscription capabilities to Go developers.
+  - `sdk/go/client.go`: Added the `Watch(ctx context.Context, kind, id string) (<-chan wire.BatchEvent, error)` method. This empowers consumers to listen to live event streams using idiomatic Go channels, automatically handling the underlying TCP stream decoding and context cancellation.
+
+---
 ## [1.1.0] - 2026-07-03 — Official Go SDK & Public Protocol Exposure
 
 ### Added

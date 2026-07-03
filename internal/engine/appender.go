@@ -19,6 +19,8 @@ type Appender struct {
 	index              *Index
 	nextOffset         int64
 	nextSnapshotOffset int64
+	muWatchers         sync.RWMutex
+	watchers           []chan wire.BatchEvent
 }
 
 func NewAppender(dataDir string, index *Index) (*Appender, error) {
@@ -53,6 +55,24 @@ func NewAppender(dataDir string, index *Index) (*Appender, error) {
 		nextOffset:         info.Size(),
 		nextSnapshotOffset: snapInfo.Size(),
 	}, nil
+}
+
+func (a *Appender) RegisterWatcher(ch chan wire.BatchEvent) {
+	a.muWatchers.Lock()
+	a.watchers = append(a.watchers, ch)
+	a.muWatchers.Unlock()
+}
+
+func (a *Appender) RemoveWatcher(ch chan wire.BatchEvent) {
+	a.muWatchers.Lock()
+	defer a.muWatchers.Unlock()
+	for i, w := range a.watchers {
+		if w == ch {
+			a.watchers = append(a.watchers[:i], a.watchers[i+1:]...)
+			close(ch)
+			break
+		}
+	}
 }
 
 func (a *Appender) Append(kind, aggregateID, eventType string, payload []byte) error {
@@ -174,6 +194,19 @@ func (a *Appender) AppendBatch(events []wire.BatchEvent) error {
 		return err
 	}
 
+	a.muWatchers.RLock()
+	if len(a.watchers) > 0 {
+		for _, ev := range events {
+			for _, ch := range a.watchers {
+				select {
+				case ch <- ev:
+				default:
+
+				}
+			}
+		}
+	}
+	a.muWatchers.RUnlock()
 	log.Printf("[APPEND_BATCH] ✓ %d events committed in %v\n", len(events), time.Since(start))
 	return nil
 }

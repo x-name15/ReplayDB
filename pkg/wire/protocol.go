@@ -13,6 +13,7 @@ const (
 	OpReplay      = 2
 	OpSnapshot    = 3
 	OpAppendBatch = 4
+	OpWatch       = 5
 )
 
 type Status uint8
@@ -82,7 +83,7 @@ func WriteRequest(w io.Writer, req *Request) error {
 	case OpReplay:
 		body.WriteInt64(req.TargetTS)
 
-	case OpSnapshot:
+	case OpSnapshot, OpWatch:
 	default:
 		return fmt.Errorf("wire: unknown opcode %d", req.Op)
 	}
@@ -166,7 +167,7 @@ func ReadRequest(r io.Reader) (*Request, error) {
 		}
 		req.TargetTS = ts
 
-	case OpSnapshot:
+	case OpSnapshot, OpWatch:
 	default:
 		return nil, fmt.Errorf("wire: unknown opcode %d in frame", req.Op)
 	}

@@ -2,6 +2,7 @@ package replaydb
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"time"
@@ -20,6 +21,7 @@ type Client interface {
 	AppendBatch(ctx context.Context, events []wire.BatchEvent) error // NUEVO
 	Travel(ctx context.Context, kind, id string, at time.Time) ([]byte, error)
 	Snapshot(ctx context.Context, kind, id string) error
+	Watch(ctx context.Context, kind, id string) (<-chan wire.BatchEvent, error)
 	Close() error
 }
 
@@ -135,6 +137,54 @@ func (c *replayClient) Snapshot(ctx context.Context, kind, id string) error {
 		return fmt.Errorf("failed to generate snapshot: %s", resp.Message)
 	}
 	return nil
+}
+
+func (c *replayClient) Watch(ctx context.Context, kind, id string) (<-chan wire.BatchEvent, error) {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", c.config.Address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect for streaming: %w", err)
+	}
+
+	req := &wire.Request{Op: wire.OpWatch, Kind: kind, ID: id}
+	if err := wire.WriteRequest(conn, req); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	resp, err := wire.ReadResponse(conn)
+	if err != nil || resp.Status != wire.StatusOK {
+		conn.Close()
+		return nil, fmt.Errorf("subscription failed: %v", err)
+	}
+
+	out := make(chan wire.BatchEvent, 100)
+
+	go func() {
+		defer conn.Close()
+		defer close(out)
+		go func() {
+			<-ctx.Done()
+			conn.Close()
+		}()
+
+		for {
+			resp, err := wire.ReadResponse(conn)
+			if err != nil {
+				return
+			}
+			var ev wire.BatchEvent
+			if err := json.Unmarshal(resp.Body, &ev); err == nil {
+				select {
+				case out <- ev:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+
+	return out, nil
 }
 
 func (c *replayClient) Close() error {

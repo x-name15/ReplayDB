@@ -191,6 +191,29 @@ func handleConnection(conn net.Conn, appender *engine.Appender, dirPath string, 
 			}
 			writeResponse(conn, &wire.Response{Status: wire.StatusOK, Message: "snapshot persisted"})
 
+		case wire.OpWatch:
+			_ = conn.SetReadDeadline(time.Time{})
+			ch := make(chan wire.BatchEvent, 128)
+			appender.RegisterWatcher(ch)
+			defer appender.RemoveWatcher(ch)
+			writeResponse(conn, &wire.Response{Status: wire.StatusOK, Message: "subscribed"})
+			for ev := range ch {
+				if req.Kind != "" && ev.Kind != req.Kind {
+					continue
+				}
+				if req.ID != "" && ev.ID != req.ID {
+					continue
+				}
+
+				evBytes, _ := json.Marshal(ev)
+				if err := conn.SetWriteDeadline(time.Now().Add(connWriteTimeout)); err != nil {
+					return
+				}
+				if err := wire.WriteResponse(conn, &wire.Response{Status: wire.StatusOK, Body: evBytes}); err != nil {
+					return
+				}
+			}
+			return
 		default:
 			writeErr(conn, "unknown opcode")
 		}
