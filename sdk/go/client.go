@@ -18,10 +18,11 @@ type Config struct {
 
 type Client interface {
 	Append(ctx context.Context, kind, id, eventType string, payload []byte) error
-	AppendBatch(ctx context.Context, events []wire.BatchEvent) error // NUEVO
+	AppendBatch(ctx context.Context, events []wire.BatchEvent) error
 	Travel(ctx context.Context, kind, id string, at time.Time) ([]byte, error)
 	Snapshot(ctx context.Context, kind, id string) error
 	Watch(ctx context.Context, kind, id string) (<-chan wire.BatchEvent, error)
+	Compact(ctx context.Context) error
 	Close() error
 }
 
@@ -185,6 +186,23 @@ func (c *replayClient) Watch(ctx context.Context, kind, id string) (<-chan wire.
 	}()
 
 	return out, nil
+}
+
+func (c *replayClient) Compact(ctx context.Context) error {
+    req := &wire.Request{
+        Op: wire.OpCompact,
+    }
+
+    resp, err := c.executeRoundTrip(ctx, req)
+    if err != nil {
+        return err
+    }
+
+    if resp.Status != wire.StatusOK {
+        return fmt.Errorf("server compaction error: %s", resp.Message)
+    }
+
+    return nil
 }
 
 func (c *replayClient) Close() error {

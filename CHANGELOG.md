@@ -2,6 +2,29 @@
 
 All notable changes to ReplayDB are documented in this file.
 
+## [1.2.0] - 2026-07-05 — Background Log Compaction
+
+### Added
+
+#### Engine & Storage
+- Implemented a native, non-blocking Log Compactor to safely reclaim disk space.
+  - `internal/engine/compactor.go`: Added the `Compact(dataDir)` method. It actively scans `events.redb` and cross-references `snapshots.redb` to identify and discard obsolete historical events that have already been consolidated into a snapshot.
+  - Utilizes a safe, two-phase atomic swap (`events.tmp.redb` to `events.redb`) to guarantee zero data corruption during the cleanup process.
+  - Read operations are performed completely lock-free; write locks are only briefly acquired during the final swap phase to sync trailing events, ensuring that high-throughput writes are never blocked.
+
+#### Networking & Protocol
+- Expanded the binary TCP protocol with a new `OpCompact` (0x06) operation in `pkg/wire/protocol.go`.
+- `internal/wireserver/handler.go`: The core server loop now listens for `OpCompact` requests and securely delegates them to the storage engine.
+
+#### SDK
+- Exposed the background compaction capability to external Go applications.
+  - `sdk/go/client.go`: Added `Compact(ctx context.Context) error` to the `Client` interface, allowing developers to trigger server-side garbage collection programmatically.
+
+#### CLI
+- Introduced the `recli compact` command.
+  - `cmd/recli/db/compact.go`: Database administrators can now manually invoke log compaction directly from the terminal, receiving immediate feedback on network roundtrips and execution time.
+
+---
 ## [1.1.2] - 2026-07-03 — Zero-Dependency Network Compression
 
 ### Added

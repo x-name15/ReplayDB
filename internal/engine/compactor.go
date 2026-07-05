@@ -1,0 +1,148 @@
+package engine
+
+import (
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/x-name15/replaydb/internal/storage"
+)
+
+type compactionReader struct {
+	r io.Reader
+	n int64
+}
+
+func (cr *compactionReader) Read(p []byte) (n int, err error) {
+	n, err = cr.r.Read(p)
+	cr.n += int64(n)
+	return
+}
+
+func (a *Appender) Compact(dataDir string) error {
+	log.Println("[COMPACTOR] Starting background Log Compaction...")
+	start := time.Now()
+
+	a.mutex.Lock()
+	cutoffOffset := a.nextOffset
+	a.mutex.Unlock()
+
+	eventsPath := filepath.Join(dataDir, "events.redb")
+	tmpPath := filepath.Join(dataDir, "events.tmp.redb")
+	snapshotsPath := filepath.Join(dataDir, "snapshots.redb")
+
+	reader, err := os.Open(eventsPath)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	cr := &compactionReader{r: reader}
+
+	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+
+	snapshotMap := make(map[string]time.Time)
+	snapReader, err := os.Open(snapshotsPath)
+	if err == nil {
+		defer snapReader.Close()
+		for {
+			rec, err := storage.DecodeNextSnapshot(snapReader)
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			key := rec.AggregateKind + ":" + rec.AggregateID
+			if current, exists := snapshotMap[key]; !exists || rec.Timestamp.After(current) {
+				snapshotMap[key] = rec.Timestamp
+			}
+		}
+	}
+
+	var kept, discarded int
+
+	for cr.n < cutoffOffset {
+		rec, err := storage.DecodeNext(cr)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			tmpFile.Close()
+			return err
+		}
+
+		key := rec.AggregateKind + ":" + rec.AggregateID
+		latestSnapTS, hasSnapshot := snapshotMap[key]
+
+		if hasSnapshot && !rec.Timestamp.After(latestSnapTS) {
+			discarded++
+			continue
+		}
+
+		encoded, err := rec.Encode()
+		if err != nil {
+			tmpFile.Close()
+			return err
+		}
+		if _, err := tmpFile.Write(encoded); err != nil {
+			tmpFile.Close()
+			return err
+		}
+		kept++
+	}
+
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+
+	for {
+		rec, err := storage.DecodeNext(cr)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			tmpFile.Close()
+			return err
+		}
+
+		encoded, err := rec.Encode()
+		if err != nil {
+			tmpFile.Close()
+			return err
+		}
+		if _, err := tmpFile.Write(encoded); err != nil {
+			tmpFile.Close()
+			return err
+		}
+		kept++
+	}
+
+	a.eventsFile.Close()
+	tmpFile.Close()
+
+	if err := os.Rename(tmpPath, eventsPath); err != nil {
+		return err
+	}
+
+	a.eventsFile, err = os.OpenFile(eventsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	stat, _ := a.eventsFile.Stat()
+	a.nextOffset = stat.Size()
+
+	if a.index != nil {
+		if err := a.index.Rebuild(dataDir); err != nil {
+			log.Printf("[COMPACTOR] Warning: index rebuild failed: %v", err)
+		}
+	}
+
+	log.Printf("[COMPACTOR] Completed in %v. Kept: %d, Discarded: %d", time.Since(start), kept, discarded)
+	return nil
+}

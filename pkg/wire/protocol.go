@@ -16,6 +16,7 @@ const (
 	OpSnapshot    = 3
 	OpAppendBatch = 4
 	OpWatch       = 5
+	OpCompact	  = 6
 )
 
 type Status uint8

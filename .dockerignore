@@ -1,0 +1,34 @@
+# Ignore documentation and assets
+docs/
+README.md
+images/
+examples/
+LICENSE
+CHANGELOG.md
+
+# Ignore GitHub general Files
+.github/
+
+# Ignore the local data folder to avoid overwriting it
+data/
+
+# Ignore version control
+.git/
+.gitignore
+
+#Ignore Repomix things
+.repomix/
+.repomixignore
+repomix.config.json
+repomix-output*.xml
+
+# Ignore tests and Benchmarks to keep the build context clean and optimize cache
+internal/tests/
+internal/benchmarks/
+*_test.go
+
+#Ignore devContainer files
+.devcontainer/
+
+# Ignore local secrets
+.env
