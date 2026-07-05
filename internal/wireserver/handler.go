@@ -103,7 +103,7 @@ func HandleConnection(conn net.Conn, appender *engine.Appender, dirPath string, 
 				continue
 			}
 			WriteResponse(conn, &wire.Response{Status: wire.StatusOK, Message: "compaction completed successfully"})
-		
+
 		default:
 			WriteErr(conn, "unknown opcode")
 		}
