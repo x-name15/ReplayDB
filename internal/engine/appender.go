@@ -21,6 +21,7 @@ type Appender struct {
 	nextSnapshotOffset int64
 	muWatchers         sync.RWMutex
 	watchers           []chan wire.BatchEvent
+	compactMu          sync.Mutex
 }
 
 func NewAppender(dataDir string, index *Index) (*Appender, error) {
@@ -155,11 +156,9 @@ func (a *Appender) AppendBatch(events []wire.BatchEvent) error {
 	if len(events) == 0 {
 		return nil
 	}
-
 	start := time.Now()
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
-
 	for _, ev := range events {
 		record := storage.EventRecord{
 			Timestamp:     time.Now().UTC(),
@@ -168,32 +167,26 @@ func (a *Appender) AppendBatch(events []wire.BatchEvent) error {
 			EventType:     ev.EventType,
 			Payload:       ev.Payload,
 		}
-
 		encoded, err := record.Encode()
 		if err != nil {
 			log.Printf("[APPEND_BATCH] ✗ encode failed for %s/%s: %v\n", ev.Kind, ev.ID, err)
 			return err
 		}
-
 		offset := a.nextOffset
 		n, err := a.eventsFile.Write(encoded)
 		if err != nil {
 			log.Printf("[APPEND_BATCH] ✗ write failed: %v\n", err)
 			return err
 		}
-
 		a.nextOffset += int64(n)
-
 		if a.index != nil {
 			a.index.Add(ev.Kind, ev.ID, offset)
 		}
 	}
-
 	if err := a.eventsFile.Sync(); err != nil {
 		log.Printf("[APPEND_BATCH] ✗ batch sync failed: %v\n", err)
 		return err
 	}
-
 	a.muWatchers.RLock()
 	if len(a.watchers) > 0 {
 		for _, ev := range events {
@@ -201,7 +194,6 @@ func (a *Appender) AppendBatch(events []wire.BatchEvent) error {
 				select {
 				case ch <- ev:
 				default:
-
 				}
 			}
 		}

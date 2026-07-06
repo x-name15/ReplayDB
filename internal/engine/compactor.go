@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -22,30 +23,28 @@ func (cr *compactionReader) Read(p []byte) (n int, err error) {
 }
 
 func (a *Appender) Compact(dataDir string) error {
+	if !a.compactMu.TryLock() {
+		return fmt.Errorf("engine: a compaction is already in progress")
+	}
+	defer a.compactMu.Unlock()
 	log.Println("[COMPACTOR] Starting background Log Compaction...")
 	start := time.Now()
-
 	a.mutex.Lock()
 	cutoffOffset := a.nextOffset
 	a.mutex.Unlock()
-
 	eventsPath := filepath.Join(dataDir, "events.redb")
 	tmpPath := filepath.Join(dataDir, "events.tmp.redb")
 	snapshotsPath := filepath.Join(dataDir, "snapshots.redb")
-
 	reader, err := os.Open(eventsPath)
 	if err != nil {
 		return err
 	}
 	defer reader.Close()
-
 	cr := &compactionReader{r: reader}
-
 	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}
-
 	snapshotMap := make(map[string]time.Time)
 	snapReader, err := os.Open(snapshotsPath)
 	if err == nil {
@@ -64,27 +63,27 @@ func (a *Appender) Compact(dataDir string) error {
 			}
 		}
 	}
-
-	var kept, discarded int
-
+	var kept, discarded, corrupted int
 	for cr.n < cutoffOffset {
 		rec, err := storage.DecodeNext(cr)
 		if err == io.EOF {
 			break
 		}
+		if err == storage.ErrChecksumMismatch {
+			log.Printf("[COMPACTOR] ⚠ corrupt record skipped at byte offset ~%d\n", cr.n)
+			corrupted++
+			continue
+		}
 		if err != nil {
 			tmpFile.Close()
 			return err
 		}
-
 		key := rec.AggregateKind + ":" + rec.AggregateID
 		latestSnapTS, hasSnapshot := snapshotMap[key]
-
 		if hasSnapshot && !rec.Timestamp.After(latestSnapTS) {
 			discarded++
 			continue
 		}
-
 		encoded, err := rec.Encode()
 		if err != nil {
 			tmpFile.Close()
@@ -96,20 +95,22 @@ func (a *Appender) Compact(dataDir string) error {
 		}
 		kept++
 	}
-
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
-
 	for {
 		rec, err := storage.DecodeNext(cr)
 		if err == io.EOF {
 			break
 		}
+		if err == storage.ErrChecksumMismatch {
+			log.Printf("[COMPACTOR] ⚠ corrupt record skipped at byte offset ~%d\n", cr.n)
+			corrupted++
+			continue
+		}
 		if err != nil {
 			tmpFile.Close()
 			return err
 		}
-
 		encoded, err := rec.Encode()
 		if err != nil {
 			tmpFile.Close()
@@ -121,28 +122,34 @@ func (a *Appender) Compact(dataDir string) error {
 		}
 		kept++
 	}
-
 	a.eventsFile.Close()
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		return err
+	}
 	tmpFile.Close()
-
 	if err := os.Rename(tmpPath, eventsPath); err != nil {
 		return err
 	}
-
+	if dirFile, err := os.Open(dataDir); err == nil {
+		if err := dirFile.Sync(); err != nil {
+			log.Printf("[COMPACTOR] Warning: failed to fsync data directory after rename: %v", err)
+		}
+		dirFile.Close()
+	} else {
+		log.Printf("[COMPACTOR] Warning: failed to open data directory for fsync: %v", err)
+	}
 	a.eventsFile, err = os.OpenFile(eventsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
-
 	stat, _ := a.eventsFile.Stat()
 	a.nextOffset = stat.Size()
-
 	if a.index != nil {
 		if err := a.index.Rebuild(dataDir); err != nil {
 			log.Printf("[COMPACTOR] Warning: index rebuild failed: %v", err)
 		}
 	}
-
-	log.Printf("[COMPACTOR] Completed in %v. Kept: %d, Discarded: %d", time.Since(start), kept, discarded)
+	log.Printf("[COMPACTOR] Completed in %v. Kept: %d, Discarded: %d, Corrupted (skipped): %d", time.Since(start), kept, discarded, corrupted)
 	return nil
 }

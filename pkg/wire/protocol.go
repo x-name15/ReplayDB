@@ -67,13 +67,10 @@ func WriteRequest(w io.Writer, req *Request) error {
 	body.WriteByte(byte(req.Op))
 	body.WriteField([]byte(req.Kind))
 	body.WriteField([]byte(req.ID))
-
 	switch req.Op {
-
 	case OpAppend:
 		body.WriteField([]byte(req.EventType))
 		body.WriteField(req.Payload)
-
 	case OpAppendBatch:
 		body.WriteInt64(int64(len(req.Batch)))
 		for _, ev := range req.Batch {
@@ -82,11 +79,9 @@ func WriteRequest(w io.Writer, req *Request) error {
 			body.WriteField([]byte(ev.EventType))
 			body.WriteField(ev.Payload)
 		}
-
 	case OpReplay:
 		body.WriteInt64(req.TargetTS)
-
-	case OpSnapshot, OpWatch:
+	case OpSnapshot, OpWatch, OpCompact:
 	default:
 		return fmt.Errorf("wire: unknown opcode %d", req.Op)
 	}
@@ -104,21 +99,17 @@ func ReadRequest(r io.Reader) (*Request, error) {
 		return nil, err
 	}
 	req := &Request{Op: Opcode(opByte)}
-
 	kind, err := fr.ReadField()
 	if err != nil {
 		return nil, err
 	}
 	req.Kind = string(kind)
-
 	id, err := fr.ReadField()
 	if err != nil {
 		return nil, err
 	}
 	req.ID = string(id)
-
 	switch req.Op {
-
 	case OpAppend:
 		evtType, err := fr.ReadField()
 		if err != nil {
@@ -130,7 +121,6 @@ func ReadRequest(r io.Reader) (*Request, error) {
 		}
 		req.EventType = string(evtType)
 		req.Payload = payload
-
 	case OpAppendBatch:
 		count, err := fr.ReadInt64()
 		if err != nil {
@@ -154,7 +144,6 @@ func ReadRequest(r io.Reader) (*Request, error) {
 			if err != nil {
 				return nil, err
 			}
-
 			req.Batch[i] = BatchEvent{
 				Kind:      string(evKind),
 				ID:        string(evID),
@@ -162,15 +151,13 @@ func ReadRequest(r io.Reader) (*Request, error) {
 				Payload:   evPayload,
 			}
 		}
-
 	case OpReplay:
 		ts, err := fr.ReadInt64()
 		if err != nil {
 			return nil, err
 		}
 		req.TargetTS = ts
-
-	case OpSnapshot, OpWatch:
+	case OpSnapshot, OpWatch, OpCompact:
 	default:
 		return nil, fmt.Errorf("wire: unknown opcode %d in frame", req.Op)
 	}
@@ -222,7 +209,6 @@ func writeFrame(w io.Writer, body []byte) error {
 	if err := gw.Close(); err != nil {
 		return err
 	}
-
 	compressed := buf.Bytes()
 	if err := binary.Write(w, binary.LittleEndian, uint32(len(compressed))); err != nil {
 		return err
@@ -239,18 +225,15 @@ func readFrame(r io.Reader) ([]byte, error) {
 	if l > maxFieldLen {
 		return nil, fmt.Errorf("wire: compressed frame length %d exceeds max %d", l, maxFieldLen)
 	}
-
 	compressed := make([]byte, l)
 	if _, err := io.ReadFull(r, compressed); err != nil {
 		return nil, err
 	}
-
 	gr, err := gzip.NewReader(bytes.NewReader(compressed))
 	if err != nil {
 		return nil, fmt.Errorf("wire: gzip decode failed: %w", err)
 	}
 	defer gr.Close()
-
 	lr := io.LimitReader(gr, int64(maxFieldLen)+1)
 	body, err := io.ReadAll(lr)
 	if err != nil {
@@ -259,6 +242,5 @@ func readFrame(r io.Reader) ([]byte, error) {
 	if len(body) > int(maxFieldLen) {
 		return nil, fmt.Errorf("wire: uncompressed frame exceeds max %d", maxFieldLen)
 	}
-
 	return body, nil
 }

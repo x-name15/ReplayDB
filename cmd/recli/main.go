@@ -11,16 +11,13 @@ import (
 
 func main() {
 	appHelper.Load(".env")
-
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
 	}
-
 	serverAddr := appHelper.GetEnv("REDB_SERVER_ADDR", "localhost:7800")
 	command := os.Args[1]
 	args := os.Args[2:]
-
 	switch command {
 	case "append":
 		db.RunAppend(serverAddr, args)
@@ -30,6 +27,10 @@ func main() {
 		db.RunSnapshot(serverAddr, args)
 	case "import":
 		db.RunImport(serverAddr, os.Args[2:])
+	case "compact":
+		db.RunCompact(serverAddr, args)
+	case "watch":
+		db.RunWatch(serverAddr, args)
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -47,6 +48,9 @@ func printUsage() {
 	fmt.Println("  append    Append an event to an aggregate's log")
 	fmt.Println("  travel    Reconstruct an aggregate's state at a point in time")
 	fmt.Println("  snapshot  Trigger a manual snapshot for an aggregate")
+	fmt.Println("  import    Bulk-append a JSON array of events in a single batch")
+	fmt.Println("  compact   Trigger a background log compaction on the server")
+	fmt.Println("  watch     Stream committed events in real time")
 	fmt.Println("  help      Show this message")
 	fmt.Println("\nRun 'recli <command> -h' for flags on a specific command.")
 }

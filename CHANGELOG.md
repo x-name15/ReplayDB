@@ -2,6 +2,25 @@
 
 All notable changes to ReplayDB are documented in this file.
 
+## [1.2.1] - 2026-07-06 — Compaction Hardening & Live Watch
+
+### Added
+- `cmd/recli/helper/client.go`: new `DialAndStream(serverAddr, req)` helper alongside the existing `DialAndRoundTrip`. It dials, sends the auth token if `REDB_AUTH_TOKEN` is set, sends the request, and returns the open connection instead of reading one response and closing it — needed for long-lived request types like `OpWatch` where the server keeps streaming.
+- `cmd/recli/db/watch.go`: new `recli watch [--kind <kind>] [--id <id>]` command. Subscribes via the server's existing `OpWatch` support (already implemented in `internal/wireserver` and the Go SDK, but previously unreachable from the CLI). Prints each incoming event as `kind/id EventType` with its pretty-printed JSON payload. Handles `Ctrl+C`/`SIGTERM` for a clean exit instead of a raw connection-reset message.
+- `cmd/recli/main.go`: registered `case "watch": db.RunWatch(serverAddr, args)` and added it to `printUsage()`.
+
+### Fixed
+- `pkg/wire/protocol.go`: added `OpCompact` to the `switch req.Op` in both `WriteRequest` and `ReadRequest`. It was defined as a constant and fully handled server-side in `internal/wireserver/handler.go`, but the wire encoder/decoder didn't know about it, so `recli compact` failed client-side with `wire: unknown opcode 6` before ever reaching the server.
+- `cmd/recli/main.go`: registered the missing `case "compact": db.RunCompact(serverAddr, args)` in the command dispatch. `RunCompact` was fully implemented in `cmd/recli/db/compact.go` but unreachable from the CLI.
+- `internal/engine/compactor.go`: `Compact` now calls `tmpFile.Sync()` before closing it and renaming it over `events.redb`. Previously the compacted data could still be sitting in the OS buffer cache (never fsynced) when the rename happened — a crash right after compaction could silently lose or corrupt the compacted log. This brings `Compact` in line with the fsync-on-every-write durability guarantee the rest of the engine already has (`Appender.Append`, `SaveSnapshot`).
+- `internal/engine/compactor.go`: after the rename, the containing data directory is now also fsynced. On POSIX systems, `os.Rename` being atomic doesn't by itself guarantee the renamed directory entry survives a crash — the directory itself needs an fsync too. This failure is treated as non-fatal (logged as a warning) since it can legitimately fail on some platforms/filesystems, and by that point the actual data is already safely persisted.
+- `internal/engine/appender.go`: added a dedicated `compactMu sync.Mutex` field to `Appender`, separate from the existing `mutex` used for append/snapshot writes.
+- `internal/engine/compactor.go`: `Compact` now calls `compactMu.TryLock()` at the very start and returns `"engine: a compaction is already in progress"` immediately if one is already running, instead of letting two concurrent `OpCompact` requests race on writing to the same `events.tmp.redb` file. The error surfaces to the client as a normal `StatusErr` response via the existing `WriteErr` path in `wireserver`, no changes needed there.
+
+### Docs
+- `cmd/recli/main.go`: added `import` and `compact` to `printUsage()`'s command list (only `append`/`travel`/`snapshot`/`help` were listed, even though `import` was already wired up).
+
+---
 ## [1.2.0] - 2026-07-05 — Background Log Compaction
 
 ### Added
