@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o redb ./cmd/redb/main.g
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o recli ./cmd/recli/main.go
 
 # Set up secure storage path for the volume target
-RUN RUN mkdir -p /home/redb/data && chown -R 10001:10001 /home/redb/data
+RUN mkdir -p /home/redb/data && chown -R 10001:10001 /home/redb/data
 
 # === Phase 2: Ultimate Scratch Runtime ===
 FROM scratch
