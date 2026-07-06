@@ -189,20 +189,20 @@ func (c *replayClient) Watch(ctx context.Context, kind, id string) (<-chan wire.
 }
 
 func (c *replayClient) Compact(ctx context.Context) error {
-    req := &wire.Request{
-        Op: wire.OpCompact,
-    }
+	req := &wire.Request{
+		Op: wire.OpCompact,
+	}
 
-    resp, err := c.executeRoundTrip(ctx, req)
-    if err != nil {
-        return err
-    }
+	resp, err := c.executeRoundTrip(ctx, req)
+	if err != nil {
+		return err
+	}
 
-    if resp.Status != wire.StatusOK {
-        return fmt.Errorf("server compaction error: %s", resp.Message)
-    }
+	if resp.Status != wire.StatusOK {
+		return fmt.Errorf("server compaction error: %s", resp.Message)
+	}
 
-    return nil
+	return nil
 }
 
 func (c *replayClient) Close() error {
