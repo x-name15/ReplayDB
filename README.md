@@ -1,6 +1,6 @@
 # 🕰️ ReplayDB
 
-[![Release](https://img.shields.io/badge/Release-v1.2.0-green?style=flat-square)](https://github.com/x-name15/ReplayDB/releases)
+[![Release](https://img.shields.io/badge/Release-v1.2.1-green?style=flat-square)](https://github.com/x-name15/ReplayDB/releases)
 [![Go Version](https://img.shields.io/badge/Go-1.25.9-00ADD8?style=flat-square&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-GPLv3-blue?style=flat-square)](LICENSE)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/x-name15/ReplayDB/release.yaml?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/x-name15/ReplayDB/actions)
