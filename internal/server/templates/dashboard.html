@@ -1,65 +1,444 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" id="htmlRoot">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ReplayDB Operational Dashboard</title>
+    <title>🕰️ ReplayDB Dashboard</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; }
-        .container { max-width: 1000px; margin: 0 auto; }
-        h1 { color: #38bdf8; border-bottom: 2px solid #334155; padding-bottom: 0.5rem; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-        .card { background: #1e293b; padding: 1.5rem; border-radius: 8px; border: 1px solid #334155; }
-        .card h3 { margin: 0 0 0.5rem 0; color: #94a3b8; font-size: 0.9rem; text-transform: uppercase; }
-        .card p { margin: 0; font-size: 1.8rem; font-weight: bold; color: #f1f5f9; }
-        .search-box { background: #1e293b; padding: 1.5rem; border-radius: 8px; border: 1px solid #38bdf8; margin-bottom: 2rem; display: flex; gap: 1rem; }
-        input { flex: 1; padding: 0.75rem; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 1rem; }
-        button { background: #38bdf8; color: #0f172a; font-weight: bold; padding: 0.75rem 1.5rem; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
-        button:hover { background: #0ea5e9; }
-        pre { background: #0f172a; padding: 1rem; border-radius: 6px; border: 1px solid #334155; overflow-x: auto; color: #34d399; font-size: 0.95rem; }
-        .footer { text-align: center; margin-top: 3rem; color: #475569; font-size: 0.85rem; }
+        :root {
+            --bg-color: #f3f5f7;
+            --bg-color-soft: #eef1f4;
+            --text-color: #1f2733;
+            --card-bg: #ffffff;
+            --border-color: #e2e8f0;
+            --border-light: #edf2f7;
+            --heading-color: #16202c;
+            --muted-color: #6b7686;
+            --input-border: #d4dbe4;
+            --console-bg: #15191f;
+            --console-text: #9ae6b4;
+            --accent: #2f9e6e;
+            --accent-dark: #257a55;
+            --accent-soft: #e3f7ee;
+            --blue: #3182ce;
+            --purple: #805ad5;
+            --orange: #ed8936;
+            --red: #e53e3e;
+            --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 2px 8px rgba(16, 24, 40, 0.04);
+            --radius: 10px;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #11161d;
+            --bg-color-soft: #161c24;
+            --text-color: #dfe6ee;
+            --card-bg: #1a212b;
+            --border-color: #2a3340;
+            --border-light: #232b36;
+            --heading-color: #f4f7fa;
+            --muted-color: #8b97a7;
+            --input-border: #2f3946;
+            --console-bg: #05070a;
+            --console-text: #8df0b3;
+            --accent-soft: #15301f;
+            --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
+        }
+
+        * { box-sizing: border-box; }
+        
+        body {
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            transition: background 0.2s, color 0.2s;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 28px 32px 60px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 32px;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--card-bg);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(6px);
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .brand .logo { font-size: 24px; }
+        .brand h1 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--heading-color);
+            letter-spacing: -0.01em;
+        }
+        .brand .ver {
+            font-size: 11px;
+            color: var(--muted-color);
+            font-family: ui-monospace, monospace;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            display: inline-block;
+            box-shadow: 0 0 0 3px var(--accent-soft);
+        }
+
+        .badge {
+            background: var(--accent-soft);
+            color: var(--accent-dark);
+            padding: 5px 11px;
+            border-radius: 20px;
+            font-size: 12.5px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        [data-theme="dark"] .badge { color: #6ee7a8; }
+
+        .icon-btn {
+            background: var(--bg-color-soft);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            transition: 0.15s;
+        }
+
+        .icon-btn:hover { background: var(--border-light); }
+        .icon-btn:active { transform: scale(0.93); }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            margin: 24px 0 32px;
+        }
+        .metric-card {
+            background: var(--card-bg);
+            padding: 18px 20px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-light);
+            position: relative;
+            overflow: hidden;
+        }
+        .metric-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: var(--accent);
+        }
+        .metric-card.blue::before { background: var(--blue); }
+        .metric-card.purple::before { background: var(--purple); }
+        .metric-card.orange::before { background: var(--orange); }
+        .metric-card.red::before { background: var(--red); }
+
+        .metric-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--muted-color);
+            font-weight: 700;
+            margin-bottom: 7px;
+        }
+        .metric-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--heading-color);
+            font-family: ui-monospace, monospace;
+            word-break: break-all;
+        }
+        .metric-sub {
+            font-size: 11px;
+            color: var(--muted-color);
+            margin-top: 4px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 26px;
+            border: 1px solid var(--border-light);
+            margin-bottom: 30px;
+        }
+        
+        .card-header {
+            margin-bottom: 20px;
+        }
+
+        .card-header h2 {
+            margin: 0 0 4px 0;
+            color: var(--heading-color);
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .card-header p {
+            margin: 0;
+            font-size: 13.5px;
+            color: var(--muted-color);
+        }
+
+        .search-form {
+            display: flex;
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+
+        .form-group { flex: 1; }
+        
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--input-border);
+            background: var(--bg-color-soft);
+            color: var(--text-color);
+            font-size: 13.5px;
+            transition: all 0.2s;
+        }
+
+        .form-input:focus {
+            outline: 2px solid var(--accent);
+            outline-offset: -1px;
+        }
+
+        .action-btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13.5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: 0.15s;
+            white-space: nowrap;
+        }
+        .action-btn:hover { background: var(--accent-dark); }
+
+        .peek-msg-card {
+            background: var(--console-bg);
+            color: var(--console-text);
+            padding: 18px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-family: ui-monospace, monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            border-left: 3px solid var(--purple);
+        }
+
+        .error-msg {
+            background: rgba(229, 62, 62, 0.1);
+            color: var(--red);
+            padding: 14px 18px;
+            border-radius: 8px;
+            font-size: 13.5px;
+            font-weight: 600;
+            border-left: 3px solid var(--red);
+            margin-top: 10px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: var(--muted-color);
+            padding: 40px 0;
+            font-size: 14px;
+            border: 1px dashed var(--border-light);
+            border-radius: 8px;
+            background: var(--bg-color-soft);
+        }
+
+        .grid-two {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 720px) {
+            .search-form, .grid-two { flex-direction: column; grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>📊 ReplayDB Live Core Monitor</h1>
 
-        <div class="stats-grid">
-            <div class="card">
-                <h3>Data Directory</h3>
-                <p style="font-size: 1.2rem; word-break: break-all;">{{.DataDir}}</p>
+    <div class="topbar">
+        <div class="brand">
+            <span class="logo">🔄</span>
+            <div>
+                <h1>ReplayDB Core Engine</h1>
+                <span class="ver">Operational Dashboard</span>
             </div>
-            <div class="card">
-                <h3>Log Payload Size</h3>
-                <p>{{.LogSize}} Bytes</p>
+        </div>
+        <div class="controls">
+            <span class="badge">
+                <span class="status-dot"></span> 
+                <span>Online</span>
+            </span>
+            <button class="icon-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle theme">🌙</button>
+        </div>
+    </div>
+
+    <div class="container">
+        
+        <div class="metrics-grid">
+            <div class="metric-card blue">
+                <div class="metric-label">Data Directory</div>
+                <div class="metric-value" style="font-size: 14px;">{{.DataDir}}</div>
             </div>
+            <div class="metric-card purple">
+                <div class="metric-label">Events Log Size</div>
+                <div class="metric-value">{{.Stats.EventsLogBytes}} <span style="font-size:12px; font-weight:normal;">Bytes</span></div>
+            </div>
+            <div class="metric-card orange">
+                <div class="metric-label">Snapshots Log Size</div>
+                <div class="metric-value">{{.Stats.SnapshotsLogBytes}} <span style="font-size:12px; font-weight:normal;">Bytes</span></div>
+            </div>
+            <div class="metric-card red">
+                <div class="metric-label">Indexed Aggregates</div>
+                <div class="metric-value">{{.Stats.IndexAggregates}}</div>
+            </div>
+        </div>
+
+        <div class="grid-two">
             <div class="card">
-                <h3>Snapshot Store Size</h3>
-                <p>{{.SnapshotSize}} Bytes</p>
+                <div class="card-header">
+                    <h2>Write Performance</h2>
+                    <p>Metrics tracking Append operations</p>
+                </div>
+                <div class="metrics-grid" style="grid-template-columns: 1fr 1fr; margin: 0;">
+                    <div>
+                        <div class="metric-label">Total Appends</div>
+                        <div class="metric-value">{{.Stats.AppendTotal}}</div>
+                        <div class="metric-sub">Errors: {{.Stats.AppendErrors}}</div>
+                    </div>
+                    <div>
+                        <div class="metric-label">Avg Latency</div>
+                        <div class="metric-value">{{.Stats.AppendAvgMs}} <span style="font-size:11px;">ms</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2>Network & Storage Cycles</h2>
+                    <p>System context and active background routines</p>
+                </div>
+                <div class="metrics-grid" style="grid-template-columns: 1fr 1fr; margin: 0;">
+                    <div>
+                        <div class="metric-label">TCP Connections</div>
+                        <div class="metric-value">{{.Stats.ConnectionsActive}}</div>
+                        <div class="metric-sub">Total opened: {{.Stats.ConnectionsOpened}}</div>
+                    </div>
+                    <div>
+                        <div class="metric-label">Archive Status</div>
+                        <div class="metric-value" style="font-size: 16px;">
+                            {{if .ArchiveEnabled}}Enabled{{else}}Disabled{{end}}
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
         <div class="card">
-            <h2>🔍 Dynamic State Inspector</h2>
-            <form method="GET" class="search-box">
-                <input type="text" name="kind" placeholder="Aggregate kind (e.g., order)" value="{{.SearchedKind}}" required>
-                <input type="text" name="id" placeholder="Aggregate ID (e.g., test-order-99)" value="{{.SearchedID}}" required>
-                <button type="submit">Reconstruct State</button>
+            <div class="card-header">
+                <h2>🕰️ Time-Travel State Inspector</h2>
+                <p>Query current materialized views for specific aggregates using timeline log replay.</p>
+            </div>
+
+            <form method="GET" class="search-form">
+                <div class="form-group">
+                    <input type="text" name="kind" class="form-input" placeholder="Aggregate kind (e.g. order)" value="{{.SearchedKind}}" required>
+                </div>
+                <div class="form-group">
+                    <input type="text" name="id" class="form-input" placeholder="Aggregate ID (e.g. 12345)" value="{{.SearchedID}}" required>
+                </div>
+                <button type="submit" class="action-btn">
+                    ⚡ Query Replay
+                </button>
             </form>
 
-            {{if .SearchedID}}
-                <h3>Reconstructed Materialized View (Time-Travel: NOW)</h3>
-                {{if .Error}}
-                    <p style="color: #ef4444;">❌ Error: {{.Error}}</p>
+            <div>
+                {{if .SearchedID}}
+                    <h3 style="font-size: 13.5px; margin-bottom: 8px; color: var(--muted-color);">Query Results:</h3>
+                    {{if .Error}}
+                        <div class="error-msg">
+                            <strong>Error:</strong> {{.Error}}
+                        </div>
+                    {{else}}
+                        <div class="peek-msg-card">{{.StateJSON}}</div>
+                    {{end}}
                 {{else}}
-                    <pre>{{.StateJSON}}</pre>
+                    <div class="empty-state">
+                        Enter an aggregate kind and ID to reconstruct its temporal state.
+                    </div>
                 {{end}}
-            {{else}}
-                <p style="color: #64748b;">Submit a kind + Aggregate ID above to inspect its reconstructed state.</p>
-            {{end}}
+            </div>
         </div>
 
-        <div class="footer">ReplayDB Engine • Architecture Phase 2</div>
+        <div class="footer-note">ReplayDB Engine</div>
     </div>
+
+    <script>
+        const htmlRoot = document.getElementById('htmlRoot');
+        const themeBtn = document.getElementById('themeBtn');
+        
+        function toggleTheme() {
+            if (htmlRoot.getAttribute('data-theme') === 'dark') {
+                htmlRoot.removeAttribute('data-theme');
+                themeBtn.innerText = '🌙';
+                localStorage.setItem('theme', 'light');
+            } else {
+                htmlRoot.setAttribute('data-theme', 'dark');
+                themeBtn.innerText = '☀️';
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        if (localStorage.getItem('theme') === 'dark') {
+            htmlRoot.setAttribute('data-theme', 'dark');
+            themeBtn.innerText = '☀️';
+        }
+    </script>
 </body>
 </html>

@@ -1,10 +1,3 @@
-// Package metrics tracks ReplayDB's operational counters and exposes them
-// in the Prometheus text exposition format — hand-written, not via the
-// official client library, so this stays zero-dependency like the rest of
-// ReplayDB while remaining scrape-compatible with real Prometheus/Grafana.
-//
-// The format itself is a simple, stable text spec:
-// https://prometheus.io/docs/instrumenting/exposition_formats/
 package metrics
 
 import (
@@ -21,19 +14,36 @@ var (
 	appendTotal         atomic.Int64
 	appendErrors        atomic.Int64
 	appendDurationNanos atomic.Int64
-
 	travelTotal         atomic.Int64
 	travelErrors        atomic.Int64
 	travelDurationNanos atomic.Int64
 	travelIndexedTotal  atomic.Int64
 	travelFullScanTotal atomic.Int64
-
-	snapshotTotal  atomic.Int64
-	snapshotErrors atomic.Int64
-
-	connectionsOpened atomic.Int64
-	connectionsActive atomic.Int64
+	snapshotTotal       atomic.Int64
+	snapshotErrors      atomic.Int64
+	connectionsOpened   atomic.Int64
+	connectionsActive   atomic.Int64
 )
+
+type IndexSizeFunc func() int
+
+type Stats struct {
+	AppendTotal         int64
+	AppendErrors        int64
+	AppendAvgMs         float64
+	TravelTotal         int64
+	TravelErrors        int64
+	TravelAvgMs         float64
+	TravelIndexedTotal  int64
+	TravelFullScanTotal int64
+	SnapshotTotal       int64
+	SnapshotErrors      int64
+	ConnectionsOpened   int64
+	ConnectionsActive   int64
+	EventsLogBytes      int64
+	SnapshotsLogBytes   int64
+	IndexAggregates     int
+}
 
 func RecordAppend(duration time.Duration, err error) {
 	appendTotal.Add(1)
@@ -73,7 +83,29 @@ func ConnClosed() {
 	connectionsActive.Add(-1)
 }
 
-type IndexSizeFunc func() int
+func Snapshot(dataDir string, indexSize IndexSizeFunc) Stats {
+	idxSize := 0
+	if indexSize != nil {
+		idxSize = indexSize()
+	}
+	return Stats{
+		AppendTotal:         appendTotal.Load(),
+		AppendErrors:        appendErrors.Load(),
+		AppendAvgMs:         avgSeconds(appendDurationNanos.Load(), appendTotal.Load()) * 1000,
+		TravelTotal:         travelTotal.Load(),
+		TravelErrors:        travelErrors.Load(),
+		TravelAvgMs:         avgSeconds(travelDurationNanos.Load(), travelTotal.Load()) * 1000,
+		TravelIndexedTotal:  travelIndexedTotal.Load(),
+		TravelFullScanTotal: travelFullScanTotal.Load(),
+		SnapshotTotal:       snapshotTotal.Load(),
+		SnapshotErrors:      snapshotErrors.Load(),
+		ConnectionsOpened:   connectionsOpened.Load(),
+		ConnectionsActive:   connectionsActive.Load(),
+		EventsLogBytes:      fileSize(filepath.Join(dataDir, "events.redb")),
+		SnapshotsLogBytes:   fileSize(filepath.Join(dataDir, "snapshots.redb")),
+		IndexAggregates:     idxSize,
+	}
+}
 
 func Handler(dataDir string, indexSize IndexSizeFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -83,27 +115,23 @@ func Handler(dataDir string, indexSize IndexSizeFunc) http.HandlerFunc {
 }
 
 func writePrometheusMetrics(w io.Writer, dataDir string, indexSize IndexSizeFunc) {
-	counter(w, "replaydb_append_total", "Total number of Append calls.", float64(appendTotal.Load()))
-	counter(w, "replaydb_append_errors_total", "Total number of failed Append calls.", float64(appendErrors.Load()))
-	gauge(w, "replaydb_append_duration_seconds_avg", "Average Append latency, including fsync.", avgSeconds(appendDurationNanos.Load(), appendTotal.Load()))
-
-	counter(w, "replaydb_travel_total", "Total number of ReplayStateAt (time-travel) calls.", float64(travelTotal.Load()))
-	counter(w, "replaydb_travel_errors_total", "Total number of failed ReplayStateAt calls.", float64(travelErrors.Load()))
-	gauge(w, "replaydb_travel_duration_seconds_avg", "Average ReplayStateAt latency.", avgSeconds(travelDurationNanos.Load(), travelTotal.Load()))
-	counter(w, "replaydb_travel_indexed_total", "Time-travel replays that used the in-memory index.", float64(travelIndexedTotal.Load()))
-	counter(w, "replaydb_travel_fullscan_total", "Time-travel replays that fell back to a full log scan.", float64(travelFullScanTotal.Load()))
-
-	counter(w, "replaydb_snapshot_total", "Total number of SaveSnapshot calls.", float64(snapshotTotal.Load()))
-	counter(w, "replaydb_snapshot_errors_total", "Total number of failed SaveSnapshot calls.", float64(snapshotErrors.Load()))
-
-	counter(w, "replaydb_connections_opened_total", "Total TCP wire connections accepted since boot.", float64(connectionsOpened.Load()))
-	gauge(w, "replaydb_connections_active", "TCP wire connections currently open.", float64(connectionsActive.Load()))
-
-	gauge(w, "replaydb_events_log_bytes", "Size of events.redb in bytes.", float64(fileSize(filepath.Join(dataDir, "events.redb"))))
-	gauge(w, "replaydb_snapshots_log_bytes", "Size of snapshots.redb in bytes.", float64(fileSize(filepath.Join(dataDir, "snapshots.redb"))))
-
+	s := Snapshot(dataDir, indexSize)
+	counter(w, "replaydb_append_total", "Total number of Append calls.", float64(s.AppendTotal))
+	counter(w, "replaydb_append_errors_total", "Total number of failed Append calls.", float64(s.AppendErrors))
+	gauge(w, "replaydb_append_duration_seconds_avg", "Average Append latency, including fsync.", s.AppendAvgMs/1000)
+	counter(w, "replaydb_travel_total", "Total number of ReplayStateAt (time-travel) calls.", float64(s.TravelTotal))
+	counter(w, "replaydb_travel_errors_total", "Total number of failed ReplayStateAt calls.", float64(s.TravelErrors))
+	gauge(w, "replaydb_travel_duration_seconds_avg", "Average ReplayStateAt latency.", s.TravelAvgMs/1000)
+	counter(w, "replaydb_travel_indexed_total", "Time-travel replays that used the in-memory index.", float64(s.TravelIndexedTotal))
+	counter(w, "replaydb_travel_fullscan_total", "Time-travel replays that fell back to a full log scan.", float64(s.TravelFullScanTotal))
+	counter(w, "replaydb_snapshot_total", "Total number of SaveSnapshot calls.", float64(s.SnapshotTotal))
+	counter(w, "replaydb_snapshot_errors_total", "Total number of failed SaveSnapshot calls.", float64(s.SnapshotErrors))
+	counter(w, "replaydb_connections_opened_total", "Total TCP wire connections accepted since boot.", float64(s.ConnectionsOpened))
+	gauge(w, "replaydb_connections_active", "TCP wire connections currently open.", float64(s.ConnectionsActive))
+	gauge(w, "replaydb_events_log_bytes", "Size of events.redb in bytes.", float64(s.EventsLogBytes))
+	gauge(w, "replaydb_snapshots_log_bytes", "Size of snapshots.redb in bytes.", float64(s.SnapshotsLogBytes))
 	if indexSize != nil {
-		gauge(w, "replaydb_index_aggregates", "Distinct aggregates currently tracked by the in-memory index.", float64(indexSize()))
+		gauge(w, "replaydb_index_aggregates", "Distinct aggregates currently tracked by the in-memory index.", float64(s.IndexAggregates))
 	}
 }
 

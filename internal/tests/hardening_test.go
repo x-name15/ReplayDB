@@ -11,8 +11,6 @@ import (
 	"github.com/x-name15/replaydb/pkg/wire"
 )
 
-// --- Fix 1: wire auth handshake ---
-
 func TestWireAuth_RoundTrip(t *testing.T) {
 	var buf bytes.Buffer
 	if err := wire.WriteAuthToken(&buf, "s3cr3t"); err != nil {
@@ -39,10 +37,8 @@ func TestWireAuth_TokensEqual(t *testing.T) {
 	}
 }
 
-// --- Fix 2: configurable payload cap ---
-
 func TestWireProtocol_MaxFieldLenConfigurable(t *testing.T) {
-	defer wire.SetMaxFieldLen(0) // restore built-in default after the test
+	defer wire.SetMaxFieldLen(0)
 	req := &wire.Request{
 		Op:        wire.OpAppend,
 		Kind:      "order",
@@ -72,8 +68,6 @@ func TestWireProtocol_MaxFieldLenZeroRestoresDefault(t *testing.T) {
 		t.Errorf("expected default max field len to accept a normal-sized request, got error: %v", err)
 	}
 }
-
-// --- Fix 4: snapshot index ---
 
 func TestIndex_SnapshotOffsetsAndRebuild(t *testing.T) {
 	dir := t.TempDir()
@@ -142,8 +136,6 @@ func TestReplayStateAt_IndexedSnapshotMatchesFullScan(t *testing.T) {
 	}
 }
 
-// --- Fix 5: non-destructive archiver ---
-
 func TestArchiver_MirrorsAppendedDataWithoutModifyingSource(t *testing.T) {
 	srcDir := t.TempDir()
 	archiveDir := t.TempDir()
@@ -162,13 +154,13 @@ func TestArchiver_MirrorsAppendedDataWithoutModifyingSource(t *testing.T) {
 	}
 	archiver := engine.NewArchiver(srcDir, archiveDir, 20*time.Millisecond)
 	go archiver.Run()
-	time.Sleep(60 * time.Millisecond) // allow at least one cycle to run
+	time.Sleep(60 * time.Millisecond)
 	if err := appender.Append("counter", "c-1", "Increment", []byte("{}")); err != nil {
 		t.Fatalf("second Append failed: %v", err)
 	}
-	time.Sleep(60 * time.Millisecond) // allow a later cycle to pick up the new bytes
+	time.Sleep(60 * time.Millisecond)
 	archiver.Stop()
-	time.Sleep(60 * time.Millisecond) // let the final cycle triggered by Stop complete
+	time.Sleep(60 * time.Millisecond)
 	srcBytes, err := os.ReadFile(filepath.Join(srcDir, "events.redb"))
 	if err != nil {
 		t.Fatalf("failed to read source events.redb: %v", err)

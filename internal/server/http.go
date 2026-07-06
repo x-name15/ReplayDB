@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/x-name15/replaydb/internal/domain"
@@ -21,13 +20,15 @@ import (
 var templatesFS embed.FS
 
 type DashboardData struct {
-	DataDir      string
-	LogSize      int64
-	SnapshotSize int64
-	SearchedKind string
-	SearchedID   string
-	StateJSON    string
-	Error        string
+	DataDir        string
+	Stats          metrics.Stats
+	ArchiveEnabled bool
+	LastCompaction *engine.CompactionInfo
+	LastArchive    *engine.ArchiveCycleInfo
+	SearchedKind   string
+	SearchedID     string
+	StateJSON      string
+	Error          string
 }
 
 func basicAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -49,30 +50,25 @@ func basicAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func StartHTTPServer(port string, dataDir string, registry *domain.Registry, index *engine.Index) {
+func StartHTTPServer(port string, dataDir string, registry *domain.Registry, index *engine.Index, appender *engine.Appender, archiver *engine.Archiver) {
 	tmpl, err := template.ParseFS(templatesFS, "templates/dashboard.html")
 	if err != nil {
 		log.Fatalf("server: failed to parse dashboard template: %v", err)
 	}
-
 	mux := http.NewServeMux()
-
 	mux.HandleFunc("/", basicAuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		eventsPath := filepath.Join(dataDir, "events.redb")
-		snapshotsPath := filepath.Join(dataDir, "snapshots.redb")
-		var logSize, snapSize int64
-		if fi, err := os.Stat(eventsPath); err == nil {
-			logSize = fi.Size()
-		}
-		if fi, err := os.Stat(snapshotsPath); err == nil {
-			snapSize = fi.Size()
-		}
 		data := DashboardData{
-			DataDir:      dataDir,
-			LogSize:      logSize,
-			SnapshotSize: snapSize,
-			SearchedKind: r.URL.Query().Get("kind"),
-			SearchedID:   r.URL.Query().Get("id"),
+			DataDir:        dataDir,
+			Stats:          metrics.Snapshot(dataDir, index.Len),
+			ArchiveEnabled: archiver != nil,
+			SearchedKind:   r.URL.Query().Get("kind"),
+			SearchedID:     r.URL.Query().Get("id"),
+		}
+		if appender != nil {
+			data.LastCompaction = appender.LastCompaction()
+		}
+		if archiver != nil {
+			data.LastArchive = archiver.LastCycle()
 		}
 		if data.SearchedID != "" && data.SearchedKind != "" {
 			state, err := engine.ReplayStateAt(dataDir, data.SearchedKind, data.SearchedID, time.Now().UTC(), registry, index)
@@ -92,13 +88,7 @@ func StartHTTPServer(port string, dataDir string, registry *domain.Registry, ind
 			log.Printf("server: template execute error: %v", err)
 		}
 	}))
-
-	// /metrics is intentionally unauthenticated by default, following the
-	// Prometheus convention (scraped from a trusted internal network). If
-	// you're exposing this beyond localhost, put it behind a reverse
-	// proxy or firewall rule the same way you would for REDB_DASHBOARD_*.
 	mux.HandleFunc("/metrics", metrics.Handler(dataDir, index.Len))
-
 	srv := &http.Server{
 		Addr:              port,
 		Handler:           mux,
@@ -107,14 +97,12 @@ func StartHTTPServer(port string, dataDir string, registry *domain.Registry, ind
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-
 	authNote := ""
 	if os.Getenv("REDB_DASHBOARD_USER") == "" || os.Getenv("REDB_DASHBOARD_PASS") == "" {
 		authNote = " (⚠ no auth configured — set REDB_DASHBOARD_USER/REDB_DASHBOARD_PASS to lock it down)"
 	}
 	log.Printf("[boot] dashboard online at http://localhost%s%s\n", port, authNote)
 	log.Printf("[boot] metrics available at http://localhost%s/metrics\n", port)
-
 	if err := srv.ListenAndServe(); err != nil {
 		log.Printf("⚠ Failed to bind Web UI HTTP server: %v\n", err)
 	}

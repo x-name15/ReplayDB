@@ -15,6 +15,14 @@ type compactionReader struct {
 	r io.Reader
 	n int64
 }
+type CompactionInfo struct {
+	At        time.Time
+	Duration  time.Duration
+	Kept      int
+	Discarded int
+	Corrupted int
+	Err       string
+}
 
 func (cr *compactionReader) Read(p []byte) (n int, err error) {
 	n, err = cr.r.Read(p)
@@ -22,13 +30,21 @@ func (cr *compactionReader) Read(p []byte) (n int, err error) {
 	return
 }
 
-func (a *Appender) Compact(dataDir string) error {
+func (a *Appender) Compact(dataDir string) (err error) {
 	if !a.compactMu.TryLock() {
 		return fmt.Errorf("engine: a compaction is already in progress")
 	}
 	defer a.compactMu.Unlock()
 	log.Println("[COMPACTOR] Starting background Log Compaction...")
 	start := time.Now()
+	var kept, discarded, corrupted int
+	defer func() {
+		info := &CompactionInfo{At: start, Duration: time.Since(start), Kept: kept, Discarded: discarded, Corrupted: corrupted}
+		if err != nil {
+			info.Err = err.Error()
+		}
+		a.lastCompaction.Store(info)
+	}()
 	a.mutex.Lock()
 	cutoffOffset := a.nextOffset
 	a.mutex.Unlock()
@@ -63,7 +79,6 @@ func (a *Appender) Compact(dataDir string) error {
 			}
 		}
 	}
-	var kept, discarded, corrupted int
 	for cr.n < cutoffOffset {
 		rec, err := storage.DecodeNext(cr)
 		if err == io.EOF {

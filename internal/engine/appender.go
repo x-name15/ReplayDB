@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/x-name15/replaydb/internal/metrics"
@@ -22,6 +23,11 @@ type Appender struct {
 	muWatchers         sync.RWMutex
 	watchers           []chan wire.BatchEvent
 	compactMu          sync.Mutex
+	lastCompaction     atomic.Pointer[CompactionInfo]
+}
+
+func (a *Appender) LastCompaction() *CompactionInfo {
+	return a.lastCompaction.Load()
 }
 
 func NewAppender(dataDir string, index *Index) (*Appender, error) {
@@ -202,7 +208,6 @@ func (a *Appender) AppendBatch(events []wire.BatchEvent) error {
 	log.Printf("[APPEND_BATCH] ✓ %d events committed in %v\n", len(events), time.Since(start))
 	return nil
 }
-
 func (a *Appender) Close() error {
 	log.Println("[engine] closing storage files...")
 	a.eventsFile.Close()

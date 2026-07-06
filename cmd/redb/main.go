@@ -70,7 +70,7 @@ func main() {
 	} else {
 		log.Println("[archive] disabled (set REDB_ARCHIVE_DIR and REDB_ARCHIVE_INTERVAL to enable periodic, non-destructive backups)")
 	}
-	go server.StartHTTPServer(httpPort, dirPath, registry, index)
+	go server.StartHTTPServer(httpPort, dirPath, registry, index, appender, archiver)
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatalf("Critical: TCP binding failure on port %s: %v", port, err)

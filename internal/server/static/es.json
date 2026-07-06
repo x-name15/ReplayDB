@@ -1,0 +1,53 @@
+{
+    "nav": {
+        "title": "StorageEngine",
+        "dashboard": "Panel General",
+        "lifecycle": "Ciclo de Vida",
+        "status": "Estado",
+        "online": "En Línea"
+    },
+    "header": {
+        "title": "Panel de Control Operacional",
+        "refresh": "Auto-refresco: 5s"
+    },
+    "kpi": {
+        "writes": "Total Ops Escritura",
+        "reads": "Total Ops Lectura",
+        "memory": "Memoria del Sistema",
+        "goroutines": "Goroutines Activas"
+    },
+    "lifecycle": {
+        "title": "Ciclo de Vida de los Datos",
+        "subtitle": "Métricas avanzadas de los subsistemas Compactor y Archiver en segundo plano.",
+        "updated": "Actualizado hace unos instantes",
+        "compactor": {
+            "title": "Subsistema de Compactación (Compactor)",
+            "status_running": "Compactando",
+            "status_idle": "Inactivo (Idle)",
+            "total_runs": "Ejecuciones Totales",
+            "efficiency": "Eficiencia de Espacio",
+            "duration": "Duración Promedio",
+            "last_run": "Último Ciclo Exitoso",
+            "progress": "Progreso de compactación"
+        },
+    "archiver": {
+        "title": "Subsistema de Archivado (Archiver)",
+        "status_tag": "Sincronización Cold Cloud",
+        "total_volume": "Volumen Total Archivado",
+        "files": "Archivos Consolidados",
+        "errors": "Errores de Sincronización",
+        "errors_unit": "fallos",
+        "destination": "Destino Actual"
+        }
+    },
+    "table": {
+        "title": "Métricas de Almacenamiento por Región / Segmento",
+        "th_id": "ID Segmento",
+        "th_size": "Tamaño en Disco",
+        "th_objects": "Objetos Activos",
+        "th_status": "Estado de Compactación",
+        "status_opt": "Optimizado",
+        "status_pend": "Pendiente",
+        "no_data": "No se encontraron segmentos activos registrados."
+    }
+}

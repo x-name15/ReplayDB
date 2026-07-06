@@ -2,6 +2,23 @@
 
 All notable changes to ReplayDB are documented in this file.
 
+## [1.2.2] - 2026-07-06 — Telemetry Snapshot & Dashboard 2.0
+
+### Added
+- `internal/metrics/metrics.go`: new `Stats` struct and `Snapshot(dataDir, indexSize) Stats` function, giving any consumer (like the dashboard) direct access to every tracked metric's current value without parsing the Prometheus text format. `writePrometheusMetrics` now builds off `Snapshot()` internally instead of duplicating the metric-gathering logic — output format on `/metrics` is unchanged.
+- `internal/engine/compactor.go`: new `CompactionInfo` struct (`At`, `Duration`, `Kept`, `Discarded`, `Corrupted`, `Err`). `Compact` now uses a named return and a `defer` to record the outcome of every run — success or failure — into the new `Appender.lastCompaction` field.
+- `internal/engine/appender.go`: added `lastCompaction atomic.Pointer[CompactionInfo]` field and `LastCompaction() *CompactionInfo` getter, returning `nil` if no compaction has run yet this process.
+- `internal/engine/archiver.go`: new `ArchiveCycleInfo` struct (`At`, `Duration`, `EventBytes`, `SnapshotBytes`, `Err`). `runCycle` now records each cycle's outcome into the new `Archiver.lastCycle` field, exposed via `LastCycle() *ArchiveCycleInfo`.
+
+### Fixed
+- `internal/server/http.go`: fixed a compile-breaking unterminated string literal in the boot log line (`log.Printf("[boot] dashboard online at http:` was missing its closing quote and the rest of the format string, leaving `authNote` computed but unused). Restored the intended `log.Printf("[boot] dashboard online at http://localhost%s%s\n", port, authNote)`.
+
+### Changed
+- `internal/server/http.go`: `StartHTTPServer` signature now takes `appender *engine.Appender` and `archiver *engine.Archiver` (the latter may be `nil` if archiving is disabled) so the dashboard can surface compaction/archiving status. `DashboardData` restructured: `LogSize`/`SnapshotSize` replaced by the full `Stats metrics.Stats`, plus new `ArchiveEnabled`, `LastCompaction`, `LastArchive` fields.
+- `cmd/redb/main.go`: updated the `StartHTTPServer` call site to pass `appender` and `archiver`.
+- `internal/server/templates/dashboard.html`: Complete UI/UX overhaul featuring a modern Enterprise/SaaS design with a native Dark/Light mode toggle. Replaced deprecated template variables with the new `Stats` object mapping. Added dedicated visualization cards for background lifecycle workers (`LastCompaction` and `LastArchive`), and implemented a robust client-side i18n engine fetching dictionaries from `/static/`.
+
+---
 ## [1.2.1] - 2026-07-06 — Compaction Hardening & Live Watch
 
 ### Added

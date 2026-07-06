@@ -1,0 +1,53 @@
+{
+    "nav": {
+        "title": "StorageEngine",
+        "dashboard": "General Dashboard",
+        "lifecycle": "Data Lifecycle",
+        "status": "Status",
+        "online": "Online"
+    },
+    "header": {
+        "title": "Operational Control Panel",
+        "refresh": "Auto-refresh: 5s"
+    },
+    "kpi": {
+        "writes": "Total Write Ops",
+        "reads": "Total Read Ops",
+        "memory": "System Memory",
+        "goroutines": "Active Goroutines"
+    },
+    "lifecycle": {
+        "title": "Data Lifecycle Management",
+        "subtitle": "Advanced background metrics for Compactor and Archiver subsystems.",
+        "updated": "Updated just now",
+    "compactor": {
+        "title": "Compaction Subsystem (Compactor)",
+        "status_running": "Compacting",
+        "status_idle": "Idle",
+        "total_runs": "Total Executions",
+        "efficiency": "Space Efficiency",
+        "duration": "Average Duration",
+        "last_run": "Last Successful Run",
+        "progress": "Compaction progress"
+        },
+    "archiver": {
+        "title": "Archiving Subsystem (Archiver)",
+        "status_tag": "Cold Cloud Sync",
+        "total_volume": "Total Volume Archived",
+        "files": "Consolidated Files",
+        "errors": "Sync Errors",
+        "errors_unit": "failures",
+        "destination": "Current Destination"
+        }
+    },
+    "table": {
+        "title": "Storage Metrics by Region / Segment",
+        "th_id": "Segment ID",
+        "th_size": "Disk Size",
+        "th_objects": "Active Objects",
+        "th_status": "Compaction Status",
+        "status_opt": "Optimized",
+        "status_pend": "Pending",
+        "no_data": "No active registered segments found."
+    }
+}

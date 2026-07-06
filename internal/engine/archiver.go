@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 )
 
@@ -13,6 +14,19 @@ type Archiver struct {
 	archiveDir string
 	interval   time.Duration
 	stopCh     chan struct{}
+	lastCycle  atomic.Pointer[ArchiveCycleInfo]
+}
+
+type ArchiveCycleInfo struct {
+	At            time.Time
+	Duration      time.Duration
+	EventBytes    int64
+	SnapshotBytes int64
+	Err           string
+}
+
+func (a *Archiver) LastCycle() *ArchiveCycleInfo {
+	return a.lastCycle.Load()
 }
 
 func NewArchiver(dataDir, archiveDir string, interval time.Duration) *Archiver {
@@ -64,6 +78,13 @@ func (a *Archiver) runCycle() {
 	if sErr != nil {
 		log.Printf("[archive] ✗ snapshots.redb mirror failed: %v\n", sErr)
 	}
+	info := &ArchiveCycleInfo{At: start, Duration: time.Since(start), EventBytes: eCopied, SnapshotBytes: sCopied}
+	if eErr != nil {
+		info.Err = eErr.Error()
+	} else if sErr != nil {
+		info.Err = sErr.Error()
+	}
+	a.lastCycle.Store(info)
 	if eCopied > 0 || sCopied > 0 {
 		log.Printf("[archive] ✓ cycle complete — %d new event bytes, %d new snapshot bytes mirrored (%s)\n",
 			eCopied, sCopied, time.Since(start))
